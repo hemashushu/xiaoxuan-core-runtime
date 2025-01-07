@@ -1,0 +1,7 @@
+{
+    name: "single-module-app"
+    version: "1.0.0"
+    edition: "2025"
+    modules: []
+    libraries: []
+}

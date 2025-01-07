@@ -1,5 +1,6 @@
 [build]
 # target = "x86_64-unknown-linux-musl"
+# target = "x86_64-unknown-linux-gnu"
 
 # custom flags for 'rustc'
 #
@@ -17,5 +18,5 @@
 rustflags = [
     # "-C", "link-arg=-lsome_library",
     # "-C", "link-arg=-Tlink-script.ld"
-    "-C", "target-feature=+crt-static"
+    # "-C", "target-feature=+crt-static"
 ]
