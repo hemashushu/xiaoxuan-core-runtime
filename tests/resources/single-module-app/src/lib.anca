@@ -4,13 +4,17 @@
 // the Mozilla Public License version 2.0 and additional exceptions,
 // more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
 
-import fn module::base::add(i32,i32)->i32
-import fn module::medium:muladd(i32,i32,i32)->i32
+import fn module::base::primitive::add(i32,i32)->i32
+import fn module::base::inc(i32)->i32
+import fn module::base::double(i32)->i32
+import fn module::math::muladd(i32,i32)->i32
 
 fn _start()->i32 {
-    // returns (11+13) + (17*19+23) = 24 + 346 = 370
-    add_i32(
-        call(add, imm_i32(11), imm_i32(13))
-        call(muladd, imm_i32(17), imm_i32(19), imm_i32(23))
+    call(add
+        call(muladd
+            call(inc, imm_i32(11))      // 11+1 = 12
+            call(double, imm_i32(13))   // 13*2 = 26
+            imm_i32(17))                // 12*26+17 = 329
+        imm_i32(19)                     // 329+19 = 348
     )
 }

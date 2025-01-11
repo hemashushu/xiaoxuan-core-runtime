@@ -41,22 +41,22 @@
 ## Builder
 
 - `ancrt build <path/to/application>`
-  Builds the binary image for the specified application.
+  Builds the binary image for the specified application or module.
 
-- `ancrt build -i <path/to/source>`
+- `ancrt build -r <path/to/source>`
   Builds the intermediate representation (IR) (*.ancr) for the source file.
 
-- `ancrt build -s <path/to/source>`
+- `ancrt build -a <path/to/source>`
   Builds the assembly code (*.anca) for the source file or IR.
 
 - `ancrt build -o <path/to/source>`
   Builds the object file (*.anco) for the source file, IR or assembly.
 
-- `ancrt build -l <path/to/object_file...>`
+- `ancrt build -m <path/to/object_file...>`
   Links the object files to a module image (*.ancm).
 
-- `ancrt build -a <path/to/module_image>`
-  Builds the application image (*.anci) from a module image and dynamically linking all dependencies.
+- `ancrt build -i <path/to/module_image>`
+  Builds the application image (*.anci) from a module image.
 
 ## Binutils
 
@@ -76,6 +76,9 @@
   Lists sections in the image.
 
 ## Builtin utilities
+
+- `ancrt debug <application>`
+  Debug the specified application.
 
 Utilities provided by the builtin module `anwriter`, `ansh`, and `ancoreutils`.
 
