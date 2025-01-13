@@ -2,45 +2,48 @@
 
 ## Anc Home Path
 
-### the user ANC HOME path, managed by unprivileged user
+### the user ANC HOME path, managed by normal/unprivileged user
 
 default: `~/.local/lib/anc`
 
-- builtin modules path:
+- user builtin modules path:
   `~/.local/lib/anc/EDITION/runtime/modules`
-- builtin libraries path:
+- user builtin libraries path:
   `~/.local/lib/anc/EDITION/runtime/libraries`
-- system modules path:
+- user modules path:
   `~/.local/lib/anc/EDITION/modules`
-- system libraries path:
+- user libraries path:
   `~/.local/lib/anc/EDITION/libraries`
 
-### the global ANC HOME path, managed by root user
+### the global ANC HOME path, managed by root/privileged user
 
 default: `/usr/local/lib/anc`
 
-- builtin modules path:
+- global builtin modules path:
   `/usr/local/lib/anc/EDITION/runtime/modules`
-- builtin libraries path:
+- global builtin libraries path:
   `/usr/local/lib/anc/EDITION/runtime/libraries`
-- system modules path:
+- global modules path:
   `/usr/local/lib/anc/EDITION/modules`
-- system libraries path:
+- global libraries path:
   `/usr/local/lib/anc/EDITION/libraries`
 
 ### the system ANC HOME path, managed by system package manager
 
 default: `/usr/lib/anc`
 
-- builtin modules path:
+- system builtin modules path:
   `/usr/lib/anc/EDITION/runtime/modules`
-- builtin libraries path:
+- system builtin libraries path:
   `/usr/lib/anc/EDITION/runtime/libraries`
 - system modules path:
   `/usr/lib/anc/EDITION/modules`
 - system libraries path:
   `/usr/lib/anc/EDITION/libraries`
 
+> The primary intent of global and system-wide applications are to be run by all users, not for development.
+
+<!--
 ### Examples
 
 - builtin module:
@@ -51,41 +54,57 @@ default: `/usr/lib/anc`
   `{MODULE_PATH}/foo/1.0.1/{src, tests, output}`
 - general library:
   `{LIBRARY_PATH}/bar/1.0.2/{src, lib, include}`
+-->
 
-### Searching order
+### Runtime isolation
 
-1. User home folder
-2. Global home folder
-3. System home folder
+The user, global, and system runtimes are independent of each other, for example, a shared module installed globally is not available to the user's application.
+
+In particular, system-wide runtimes, modules, and applications are managed by the system's package manager, and users (either normal or privileged) cannot create, install, update, or remove system-wide runtimes, modules, and applications through the XiaoXuan Core runtime or launcher.
 
 ## Repository index cache
 
-`~/.local/lib/anc/repositories/{hash-of-remote-git-repo}`
+`~/.local/lib/anc/repositories/{remote_git_repo_name_path}`
 
+<!--
+`/usr/local/lib/anc/repositories/{remote_git_repo_name_path}`
+-->
+
+<!--
 ## Remote applications cache
 
-cache the remote applications and modules
+the cache of the remote applications and modules
 
-default:  `/tmp/anc`
+default path:  `/tmp/anc/{user_name}/modules`
+-->
 
 ## Configuration files
 
-- `~/.local/lib/anc/config.ason`
-- `/etc/anc/config.ason`
+- System and global: `/etc/anc/config.ason`
+- User: `~/.local/lib/anc/config.ason`
+
+Configuration files are inherited, i.e. the user-type runtime will read both configuration files above and then override the global one using the user's values.
 
 ## Installed application scripts and symbolic links
 
-- scripts folder:
-  `/usr/lib/anc/applications/{app_name}`
+- User
+  local application source files:
+  `~/.local/lib/anc/applicatons/{app_name}`
+  shell scripts folder:
+  `~/.local/lib/anc/scripts`
   symbol links:
-  `/usr/bin`
+  `~/.local/bin/{app_name}`
 
-- scripts folder:
+- Global
+  local application source files:
   `/usr/local/lib/anc/applicatons/{app_name}`
+  shell scripts folder:
+  `/usr/local/lib/anc/scripts`
   symbol links:
   `/usr/local/bin`
 
-- scripts folder:
-  `~/.local/lib/anc/applicatons/{app_name}`
+- System
+  scripts folder:
+  `/usr/lib/anc/applications/{app_name}`
   symbol links:
-  `~/.local/bin/{app_name}`
+  `/usr/bin`

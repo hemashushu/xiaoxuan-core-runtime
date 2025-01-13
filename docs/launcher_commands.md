@@ -5,17 +5,19 @@
 - `anc search <application_name>`
   Search the specified application from the center repository.
 
-- `anc install <application>`
+- `anc install [--global] <application>`
   - Installs an application from center repository, a local project folder, single source file, remote Git repository.
   - Creates a shell script and symbolic link for quick launching.
+  - Add `--global` parameter to install to the _global modules path_.
+  - The runtime specified by the application will be installed automatically if it does not exist.
 
-- `anc list`
+- `anc list [--global]`
   List installed applications.
 
-- `anc update/upgrade [application_name]`
+- `anc update [--global] [application_name]`
   Updates all installed applications or a specified one.
 
-- `anc uninstall/remove <application_name>`
+- `anc uninstall|remove [--global] <application_name>`
   Removes an installed application.
 
 - `anc download <application> [-o <path>]`
@@ -23,20 +25,20 @@
 
 ## Runtime Management
 
-- `anc runtime all`
+- `anc runtime list [--installed]`
   List all available runtime's edition and version.
 
-- `anc runtime update [edition]`
-  Initializes the user environment, downloading the latest runtime.
+- `anc runtime install [--global] <edition>`
+  Add the specified edition runtime.
 
-- `anc runtime list`
-  Lists installed runtime versions.
+- `anc runtime update [--global] [edition]`
+  Download the latest runtime.
 
 - `anc runtime default <edition>`
   Set the default edition.
 
-- `anc runtime remove <version_number>`
-  Removes an installed runtime version.
+- `anc runtime uninstall|remove [--global] <edition>`
+  Removes an installed runtime edition.
 
 ## Other
 

@@ -29,20 +29,18 @@
 - `ancrt dep add -l <library_name>`
   Adds a dependent library to the current module.
 
-- `ancrt run .`
+- `ancrt run [.unit_name]`
   Runs the current module if it's an application.
 
-- `ancrt test`
-  Runs unit tests for the current module.
-
-- `ancrt test <unit_test_path_name>`
-  Runs the specified unit test. (e.g., `math::test_add`, `http_client::test_get`)
+- `ancrt test [unit_test_unit_name]`
+  Runs unit tests for the current module. The `unit_test_unit_name` can be the name of a submodule (e.g. "client", "client::http", note that the name of the module does not need to be specified), or the path name of a function (e.g. "client::http::test_get").
 
 ## Builder
 
 - `ancrt build <path/to/application>`
   Builds the binary image for the specified application or module.
 
+<!--
 - `ancrt build -r <path/to/source>`
   Builds the intermediate representation (IR) (*.ancr) for the source file.
 
@@ -56,7 +54,8 @@
   Links the object files to a module image (*.ancm).
 
 - `ancrt build -i <path/to/module_image>`
-  Builds the application image (*.anci) from a module image.
+  Generates the application image (*.anci) from the main module image.
+-->
 
 ## Binutils
 

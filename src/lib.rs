@@ -7,10 +7,11 @@
 use std::fmt::Display;
 
 pub mod builder;
+pub mod common;
 pub mod creator;
 pub mod dumpper;
 pub mod entry;
-pub mod common;
+pub mod fetcher;
 pub mod runner;
 
 pub const MODULE_CONFIG_FILE_NAME: &str = "module.anc.ason";
@@ -25,10 +26,13 @@ pub const FILE_EXTENSION_OBJECT: &str = "anco";
 pub const FILE_EXTENSION_MODULE: &str = "ancm";
 pub const FILE_EXTENSION_IMAGE: &str = "anci";
 
+pub const FILE_EXTENSION_META:&str = "meta.ason";
+
 pub const DIRECTORY_NAME_OUTPUT: &str = "output";
 pub const DIRECTORY_NAME_IR: &str = "ir";
 pub const DIRECTORY_NAME_ASSEMBLY: &str = "assembly";
 pub const DIRECTORY_NAME_OBJECT: &str = "object";
+pub const DIRECTORY_NAME_ASSET: &str = "asset";
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum RuntimeError {
