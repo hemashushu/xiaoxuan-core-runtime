@@ -23,10 +23,10 @@ use anc_parser_asm::{parser::parse_from_str, NAME_PATH_SEPARATOR};
 
 use crate::{
     common::{
-        get_dependencies, get_file_mata_path, get_file_meta, get_file_timestamp,
+        get_app_path, get_dependencies, get_file_mata_path, get_file_meta, get_file_timestamp,
         get_module_config_file, get_output_asset_path, get_output_object_path, get_output_path,
-        get_output_shared_module_file, get_src_path, list_assembly_files, list_object_files,
-        load_module_config, FileMeta, PathWithTimestamp,
+        get_output_shared_module_file, get_src_path, get_tests_path, list_assembly_files,
+        list_object_files, load_module_config, FileMeta, PathWithTimestamp,
     },
     RuntimeError, FILE_EXTENSION_OBJECT, MODULE_CONFIG_FILE_NAME,
 };
@@ -34,7 +34,7 @@ use crate::{
 /// Compile the specified module and generate the module image file.
 /// The last modification time of source files is checked and no
 /// module image is generated if all source files remain unchanged.
-pub fn rebuild_module(module_path: &Path) -> Result<PathBuf, RuntimeError> {
+pub fn build_module(module_path: &Path) -> Result<Option<ImageCommonEntry>, RuntimeError> {
     let output_path = get_output_path(module_path, None);
 
     let module_config_file_path = get_module_config_file(module_path);
@@ -49,6 +49,7 @@ pub fn rebuild_module(module_path: &Path) -> Result<PathBuf, RuntimeError> {
     // always re-compile/assemble when configuration changed
     let module_config_file_meta_path =
         get_file_mata_path(&output_asset_path, MODULE_CONFIG_FILE_NAME);
+
     let (module_config_changed, module_config_timestamp_opt) = {
         let current_timestamp_opt = get_file_timestamp(&module_config_file_path)?;
         let file_meta_opt = get_file_meta(&module_config_file_meta_path)?;
@@ -80,14 +81,23 @@ pub fn rebuild_module(module_path: &Path) -> Result<PathBuf, RuntimeError> {
 
     // check assembly files
     let mut pending_assemble_files = vec![];
-    {
+
+    for (source_path, prefix_path) in {
         let src_path = get_src_path(module_path);
-        let src_file_path_and_timestamps = list_assembly_files(&src_path)?;
+        let app_path = get_app_path(module_path);
+        let tests_path = get_tests_path(module_path);
+        [
+            (src_path.clone(), src_path.clone()),
+            (app_path, module_path.to_path_buf()),
+            (tests_path, module_path.to_path_buf()),
+        ]
+    } {
+        let source_file_path_and_timestamps = list_assembly_files(&source_path)?;
 
         for PathWithTimestamp {
             path_buf: file_path,
             timestamp: current_timestamp_opt,
-        } in src_file_path_and_timestamps
+        } in source_file_path_and_timestamps
         {
             // gets the relative path of source file,
             // and converts it into a file name.
@@ -99,7 +109,7 @@ pub fn rebuild_module(module_path: &Path) -> Result<PathBuf, RuntimeError> {
             // - name path: "network/http/get"
             // - canonical name: "network-http-get"
             // - submodule name path: "network::http::get"
-            let relative_path = file_path.strip_prefix(&src_path).unwrap();
+            let relative_path = file_path.strip_prefix(&prefix_path).unwrap();
             let name_path = relative_path.with_extension("");
             let name_parts = name_path
                 .components()
@@ -139,7 +149,9 @@ pub fn rebuild_module(module_path: &Path) -> Result<PathBuf, RuntimeError> {
     }
 
     // re-assemble
-    if !pending_assemble_files.is_empty() {
+    let shared_module_entry_opt = if pending_assemble_files.is_empty() {
+        None
+    } else {
         std::fs::create_dir_all(&output_object_path)
             .map_err(|e| RuntimeError::Message(format!("{}", e)))?;
 
@@ -147,14 +159,14 @@ pub fn rebuild_module(module_path: &Path) -> Result<PathBuf, RuntimeError> {
         for (src_path_buf, meta_file_path, canonical_name, submodule_name_path, timestamp_opt) in
             pending_assemble_files
         {
+            println!(">> assemble: {}", src_path_buf.to_str().unwrap());
+
             let submodule_full_name =
                 if submodule_name_path == "lib" || submodule_name_path == "main" {
                     module_config.name.clone()
                 } else {
                     format!("{}::{}", module_config.name, submodule_name_path)
                 };
-
-            println!(">>>>>>>>> RE-ASM::{}", src_path_buf.to_str().unwrap());
 
             let image_common_entry = assemble(
                 &import_module_entries,
@@ -166,6 +178,11 @@ pub fn rebuild_module(module_path: &Path) -> Result<PathBuf, RuntimeError> {
             let mut object_file_path_buf = PathBuf::from(&output_object_path);
             object_file_path_buf.push(canonical_name);
             object_file_path_buf.set_extension(FILE_EXTENSION_OBJECT);
+
+            println!(
+                "^^ update assembly meta: {}",
+                meta_file_path.to_str().unwrap()
+            );
 
             save_object_file(&image_common_entry, &object_file_path_buf)?;
             save_object_file_meta(timestamp_opt, &meta_file_path)?;
@@ -189,20 +206,30 @@ pub fn rebuild_module(module_path: &Path) -> Result<PathBuf, RuntimeError> {
             image_common_entries.push(image_common_entry);
         }
 
-        println!(">>>>>>>>> LINK");
+        println!(
+            ">> generate module binary: {}",
+            shared_module_file_full_path.to_str().unwrap()
+        );
 
         let linked_image_common_entry = link(&module_config.name, &image_common_entries)?;
         save_shared_module_file(&linked_image_common_entry, &shared_module_file_full_path)?;
-    }
 
+        Some(linked_image_common_entry)
+    };
+
+    // update config file meta
     if module_config_changed {
-        println!(">>>>>>>>> SAVE CONFIG");
+        println!(
+            "^^ update module config meta: {}",
+            module_config_file_meta_path.to_str().unwrap()
+        );
+
         std::fs::create_dir_all(&output_asset_path)
             .map_err(|e| RuntimeError::Message(format!("{}", e)))?;
         save_module_config_file_meta(module_config_timestamp_opt, &module_config_file_meta_path)?;
     }
 
-    Ok(shared_module_file_full_path)
+    Ok(shared_module_entry_opt)
 }
 
 fn save_module_config_file_meta(
@@ -313,7 +340,7 @@ fn save_application_image_file(
 mod tests {
     use std::path::PathBuf;
 
-    use super::rebuild_module;
+    use super::build_module;
 
     fn get_resources_path_buf() -> PathBuf {
         // returns the project's root folder
@@ -325,11 +352,11 @@ mod tests {
     }
 
     #[test]
-    fn test_rebuild_module() {
+    fn test_build_module() {
         let mut moudle_path_buf = get_resources_path_buf();
         moudle_path_buf.push("single_module_app");
 
-        let result = rebuild_module(&moudle_path_buf);
+        let result = build_module(&moudle_path_buf);
         assert!(result.is_ok());
     }
 }

@@ -206,6 +206,11 @@ pub fn get_file_timestamp(file_path: &Path) -> Result</* timestamp */ Option<u64
  */
 pub fn list_assembly_files(start_path: &Path) -> Result<Vec<PathWithTimestamp>, RuntimeError> {
     let mut assembly_files = vec![];
+
+    if !start_path.exists() {
+        return Ok(assembly_files);
+    }
+
     let mut subfolders = VecDeque::new();
 
     let start_path_buf = PathBuf::from(start_path);
