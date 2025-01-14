@@ -19,7 +19,10 @@ use anc_image::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    entry::ModuleConfig, RuntimeError, DIRECTORY_NAME_ASSEMBLY, DIRECTORY_NAME_ASSET, DIRECTORY_NAME_IR, DIRECTORY_NAME_OBJECT, DIRECTORY_NAME_OUTPUT, FILE_EXTENSION_ASSEMBLY, FILE_EXTENSION_META, FILE_EXTENSION_MODULE, FILE_EXTENSION_OBJECT, MODULE_CONFIG_FILE_NAME, MODULE_DIRECTORY_NAME_APP, MODULE_DIRECTORY_NAME_SRC, MODULE_DIRECTORY_NAME_TESTS
+    entry::ModuleConfig, RuntimeError, DIRECTORY_NAME_ASSEMBLY, DIRECTORY_NAME_ASSET,
+    DIRECTORY_NAME_IR, DIRECTORY_NAME_OBJECT, DIRECTORY_NAME_OUTPUT, FILE_EXTENSION_ASSEMBLY,
+    FILE_EXTENSION_META, FILE_EXTENSION_MODULE, FILE_EXTENSION_OBJECT, MODULE_CONFIG_FILE_NAME,
+    MODULE_DIRECTORY_NAME_APP, MODULE_DIRECTORY_NAME_SRC, MODULE_DIRECTORY_NAME_TESTS,
 };
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -100,12 +103,14 @@ pub fn get_file_meta(meta_file_path: &Path) -> Result<Option<FileMeta>, RuntimeE
         }
     };
 
-    ason::from_reader(config_file).map_err(|e| {
-        RuntimeError::Message(match std::fs::read_to_string(meta_file_path) {
-            Ok(source_code) => e.with_source(&source_code),
-            Err(e) => format!("{}", e),
+    ason::from_reader(config_file)
+        .map_err(|e| {
+            RuntimeError::Message(match std::fs::read_to_string(meta_file_path) {
+                Ok(source_code) => e.with_source(&source_code),
+                Err(e) => format!("{}", e),
+            })
         })
-    })
+        .map(|o| Some(o))
 }
 
 pub fn get_module_config_file(module_path: &Path) -> PathBuf {
@@ -174,7 +179,7 @@ pub fn get_output_object_path(output_path: &Path) -> PathBuf {
     path_buf
 }
 
-pub fn get_output_shared_module_file(output_path: &Path, module_name:&str) -> PathBuf {
+pub fn get_output_shared_module_file(output_path: &Path, module_name: &str) -> PathBuf {
     let mut path_buf = PathBuf::from(output_path);
     path_buf.push(module_name);
     path_buf.set_extension(FILE_EXTENSION_MODULE);
@@ -281,7 +286,7 @@ mod tests {
     #[test]
     fn test_list_assembly_files() {
         let mut moudle_path_buf = get_resources_path_buf();
-        moudle_path_buf.push("single-module-app");
+        moudle_path_buf.push("single_module_app");
 
         let src_path_buf = get_src_path(&moudle_path_buf);
         let src_path = src_path_buf.as_path();
