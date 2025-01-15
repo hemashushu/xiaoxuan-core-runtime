@@ -1,0 +1,23 @@
+// Copyright (c) 2025 Hemashushu <hippospark@gmail.com>, All rights reserved.
+//
+// This Source Code Form is subject to the terms of
+// the Mozilla Public License version 2.0 and additional exceptions,
+// more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
+
+import fn module::five()->i32
+
+fn test_five() ->i32 {
+    // assert!(five(), 5)
+    if -> i32
+        eq_i32(call(five), imm_i32(5))
+        imm_i32(0)
+        imm_i32(1)
+}
+
+fn test_five_failed() ->i32 {
+    // assert!(five(), 55)
+    if -> i32
+        eq_i32(call(five), imm_i32(55))
+        imm_i32(0)
+        imm_i32(1)
+}

@@ -1,5 +1,5 @@
 {
-    name: "single_module_app"
+    name: "single_module_with_unit_tests"
     version: "1.0.0"
     edition: "2025"
 }

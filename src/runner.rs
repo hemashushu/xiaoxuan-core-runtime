@@ -4,7 +4,7 @@
 // the Mozilla Public License version 2.0 and additional exceptions,
 // more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
 
-use std::{collections::HashMap, sync::Mutex};
+use std::{collections::HashMap, path::Path, sync::Mutex};
 
 use anc_context::{
     external_function_table::ExternalFunctionTable, process_config::ProcessConfig,
@@ -63,4 +63,28 @@ pub fn launch(
     let resource = MappedFileProcessResource::new(process_config);
     let process_context = resource.create_process_context()?;
     start_program(&process_context, entry_point_name, vec![])
+}
+
+// Load application image and load module images from
+// the DependentModuleSection directly.
+//
+// The missing modules will be downloaded and recompiled.
+// Since non-local-type modules have unique versions, there
+// is no need to recompile other modules or generate
+// application images.
+fn load_application(module_path:&Path)  {
+    // todo
+}
+
+// Load application image and load module images from
+// the DependentModuleSection, and check the modification
+// of all local-type modules.
+//
+// The loading process will be interrupted if a module is missing
+// or an update is found, and then:
+// - Recompile all modules.
+// - Regenerate the application image.
+// - Reload application.
+fn load_local_application(module_path:&Path) {
+    // todo
 }

@@ -1,0 +1,24 @@
+// Copyright (c) 2025 Hemashushu <hippospark@gmail.com>, All rights reserved.
+//
+// This Source Code Form is subject to the terms of
+// the Mozilla Public License version 2.0 and additional exceptions,
+// more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
+
+import fn module::two()->i32
+import fn module::three()->i32
+
+fn test_two() ->i32 {
+    // assert!(two(), 2)
+    if -> i32
+        eq_i32(call(two), imm_i32(2))
+        imm_i32(0)
+        imm_i32(1)
+}
+
+fn test_three() ->i32 {
+    // assert!(three(), 3)
+    if -> i32
+        eq_i32(call(three), imm_i32(3))
+        imm_i32(0)
+        imm_i32(1)
+}
