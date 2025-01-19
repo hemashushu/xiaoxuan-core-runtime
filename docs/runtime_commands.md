@@ -3,17 +3,18 @@
 ## Runner
 
 - `ancrt run <application> <args>`
-
   Runs the specified application, which can be a:
 
   - Module name
   - Project folder
   - Source file path (for single-file applications)
-  - Remote Git repository URL
+  - Remote Git URL
 
-- `ancrt run <application.unit> <args>`
-
+- `ancrt run <application.unit_name> <args>`
   Runs the specified executable unit of an application.
+
+- `ancrt run [.unit_name]`
+  Runs the application if the current directory is the root directory of a project.
 
 ## Creator
 
@@ -23,22 +24,17 @@
 - `ancrt new -f <file_name>`
   Creates a new single-file application.
 
-- `ancrt dep add <module_name>`
+- `ancrt mod add <module_name>`
   Adds a dependent module to the current module.
 
-- `ancrt dep add -l <library_name>`
+- `ancrt lib add <library_name>`
   Adds a dependent library to the current module.
 
-- `ancrt run [.unit_name]`
-  Runs the current module if it's an application.
-
-- `ancrt test [unit_test_unit_name]`
-  Runs unit tests for the current module. The `unit_test_unit_name` can be the name of a submodule (e.g. "client", "client::http", note that the name of the module does not need to be specified), or the path name of a function (e.g. "client::http::test_get").
-
-## Builder
+- `ancrt test [unit_test_name]`
+  Runs unit tests for the current module. The `unit_test_name` can be the name of a submodule (e.g. "client" for the namespace "tests::client", note that the name of the module does not need to be specified), or the path name of a unit test function (e.g. "client::test_get" for the function "tests::client::test_get).
 
 - `ancrt build <path/to/application>`
-  Builds the binary image for the specified application or module.
+  Builds the binary image for the specified application or module. When building an application, all dependent modules and libraries will be automatically downloaded.
 
 <!--
 - `ancrt build -r <path/to/source>`

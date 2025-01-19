@@ -13,16 +13,18 @@ use std::{
 };
 
 use anc_image::{
-    entry::{ExternalLibraryEntry, ImportModuleEntry}, format_dependency_hash, DependencyHash, ZERO_DEPENDENCY_HASH
+    entry::{ExternalLibraryEntry, ImportModuleEntry},
+    format_dependency_hash, DependencyHash, ZERO_DEPENDENCY_HASH,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
     entry::ModuleConfig, RuntimeError, DIRECTORY_NAME_ASSEMBLY, DIRECTORY_NAME_ASSET,
-    DIRECTORY_NAME_IR, DIRECTORY_NAME_OBJECT, DIRECTORY_NAME_OUTPUT, FILE_EXTENSION_ASSEMBLY,
-    FILE_EXTENSION_IMAGE, FILE_EXTENSION_IR, FILE_EXTENSION_META, FILE_EXTENSION_MODULE,
-    FILE_EXTENSION_OBJECT, MODULE_CONFIG_FILE_NAME, MODULE_DIRECTORY_NAME_APP,
-    MODULE_DIRECTORY_NAME_SRC, MODULE_DIRECTORY_NAME_TESTS,
+    DIRECTORY_NAME_IR, DIRECTORY_NAME_LIBRARIES, DIRECTORY_NAME_MODULES, DIRECTORY_NAME_OBJECT,
+    DIRECTORY_NAME_OUTPUT, DIRECTORY_NAME_RUNTIME, FILE_EXTENSION_ASSEMBLY, FILE_EXTENSION_IMAGE,
+    FILE_EXTENSION_IR, FILE_EXTENSION_META, FILE_EXTENSION_MODULE, FILE_EXTENSION_OBJECT,
+    MODULE_CONFIG_FILE_NAME, MODULE_DIRECTORY_NAME_APP, MODULE_DIRECTORY_NAME_SRC,
+    MODULE_DIRECTORY_NAME_TESTS,
 };
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -40,6 +42,16 @@ pub struct PathWithTimestamp {
 
     /// Some file system (e.g. FAT32) does not support timestamp.
     pub timestamp: Option<u64>,
+}
+
+pub struct RuntimeProperty {
+    /// - User: `~/.local/lib/anc`
+    /// - Global: `/usr/local/lib/anc`
+    /// - System: `/usr/lib/anc`
+    current_root: PathBuf,
+
+    /// e.g. "2025"
+    current_edition: String,
 }
 
 /// `./src`
@@ -328,6 +340,63 @@ pub fn list_object_files(object_file_directory: &Path) -> Result<Vec<PathBuf>, R
     }
 
     Ok(object_files)
+}
+
+impl RuntimeProperty {
+    pub fn new(current_root: PathBuf, current_edition: String) -> Self {
+        Self {
+            current_root,
+            current_edition,
+        }
+    }
+
+    /// - User: `~/.local/lib/anc/EDITION/runtime`
+    /// - Global: `/usr/local/lib/anc/EDITION/runtime`
+    /// - System: `/usr/lib/anc/EDITION/runtime`
+    pub fn get_runtime_directory(&self) -> PathBuf {
+        let mut path_buf = PathBuf::from(&self.current_root);
+        path_buf.push(&self.current_edition);
+        path_buf.push(DIRECTORY_NAME_RUNTIME);
+        path_buf
+    }
+
+    /// - User: `~/.local/lib/anc/EDITION/runtime/modules`
+    /// - Global: `/usr/local/lib/anc/EDITION/runtime/modules`
+    /// - System: `/usr/lib/anc/EDITION/runtime/modules`
+    pub fn get_builtin_modules_directory(&self) -> PathBuf {
+        let mut path_buf = self.get_runtime_directory();
+        path_buf.push(DIRECTORY_NAME_MODULES);
+        path_buf
+    }
+
+    /// - User: `~/.local/lib/anc/EDITION/runtime/libraries`
+    /// - Global: `/usr/local/lib/anc/EDITION/runtime/libraries`
+    /// - System: `/usr/lib/anc/EDITION/runtime/libraries`
+    pub fn get_builtin_libraries_directory(&self) -> PathBuf {
+        let mut path_buf = self.get_runtime_directory();
+        path_buf.push(DIRECTORY_NAME_LIBRARIES);
+        path_buf
+    }
+
+    /// - User: `~/.local/lib/anc/EDITION/modules`
+    /// - Global: `/usr/local/lib/anc/EDITION/modules`
+    /// - System: `/usr/lib/anc/EDITION/modules`
+    pub fn get_modules_directory(&self) -> PathBuf {
+        let mut path_buf = PathBuf::from(&self.current_root);
+        path_buf.push(&self.current_edition);
+        path_buf.push(DIRECTORY_NAME_MODULES);
+        path_buf
+    }
+
+    /// - User: `~/.local/lib/anc/EDITION/libraries`
+    /// - Global: `/usr/local/lib/anc/EDITION/libraries`
+    /// - System: `/usr/lib/anc/EDITION/libraries`
+    pub fn get_libraries_directory(&self) -> PathBuf {
+        let mut path_buf = PathBuf::from(&self.current_root);
+        path_buf.push(&self.current_edition);
+        path_buf.push(DIRECTORY_NAME_MODULES);
+        path_buf
+    }
 }
 
 #[cfg(test)]

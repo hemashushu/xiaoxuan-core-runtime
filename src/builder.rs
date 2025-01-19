@@ -15,6 +15,7 @@ use anc_image::{
     entry_reader::read_object_file,
     entry_writer::{write_image_file, write_object_file},
 };
+use anc_isa::EffectiveVersion;
 use anc_linker::{
     indexer::{build_indices, sort_modules},
     linker::link_modules,
@@ -27,10 +28,10 @@ use crate::{
         get_dependencies, get_file_timestamp, get_hash_asset_path, get_mata_file_path,
         get_mata_file_path_by_full_name, get_module_config_file_path, get_object_file_path,
         get_output_hash_path, get_output_path, get_shared_module_file_path, get_src_path,
-        get_tests_path, list_assembly_files, list_object_files, load_file_meta, load_module_config,
-        FileMeta, PathWithTimestamp,
+        get_tests_path, list_assembly_files, load_file_meta, load_module_config, FileMeta,
+        PathWithTimestamp, RuntimeProperty,
     },
-    RuntimeError, FILE_EXTENSION_OBJECT, MODULE_CONFIG_FILE_NAME,
+    RuntimeError, MODULE_CONFIG_FILE_NAME,
 };
 
 struct PendingItem {
@@ -67,7 +68,6 @@ struct ScanStartItem {
 pub fn build_module(
     module_path: &Path,
     include_unit_tests: bool,
-    force_rebuild: bool,
 ) -> Result<Option<ImageCommonEntry>, RuntimeError> {
     // module config
     let module_config_file_path = get_module_config_file_path(module_path);
@@ -108,8 +108,6 @@ pub fn build_module(
 
         (is_module_config_changed, current_timestamp_opt)
     };
-
-    let is_rebuild = force_rebuild || is_module_config_changed;
 
     // the building process
     //
@@ -212,7 +210,7 @@ pub fn build_module(
 
             let is_object_file_exists = object_file_path.exists();
 
-            if is_rebuild // re-assemble when configuration changed
+            if is_module_config_changed // re-assemble when configuration changed
                 || !is_object_file_exists // re-assemble when object file does not exist
                 || is_assembly_file_changed
             {
@@ -230,7 +228,8 @@ pub fn build_module(
     }
 
     // re-assemble
-    if !pending_assemble_items.is_empty() {
+    let is_reassemble = !pending_assemble_items.is_empty();
+    if is_reassemble {
         std::fs::create_dir_all(&object_path)
             .map_err(|e| RuntimeError::Message(format!("{}", e)))?;
 
@@ -277,7 +276,7 @@ pub fn build_module(
                 pending_assemble_item.meta_file_path.to_str().unwrap()
             );
 
-            save_object_file_meta(
+            save_object_meta(
                 pending_assemble_item.timestamp_opt,
                 &pending_assemble_item.meta_file_path,
             )?;
@@ -285,16 +284,19 @@ pub fn build_module(
     }
 
     // link
-    let module_entry_opt = if pending_assemble_items.is_empty() {
+    let shared_module_file_path = get_shared_module_file_path(&hash_path, &module_config.name);
+    let is_shared_module_file_exist = shared_module_file_path.exists();
+
+    let module_entry_opt = if !is_reassemble && is_shared_module_file_exist {
         None
     } else {
         let mut object_binaries = vec![];
         let mut image_common_entries = vec![];
 
         for object_file in object_files {
-            let image_binary =
+            let object_binary =
                 std::fs::read(&object_file).map_err(|e| RuntimeError::Message(format!("{}", e)))?;
-            object_binaries.push(image_binary);
+            object_binaries.push(object_binary);
         }
 
         for object_binary in &object_binaries {
@@ -303,14 +305,14 @@ pub fn build_module(
             image_common_entries.push(image_common_entry);
         }
 
-        let shared_module_file_path = get_shared_module_file_path(&hash_path, &module_config.name);
-
         println!(
             ">> write module binary: {}",
             shared_module_file_path.to_str().unwrap()
         );
 
-        let module_entry = link(&module_config.name, &image_common_entries)?;
+        let module_name = &module_config.name;
+        let module_version = EffectiveVersion::from_str(&module_config.version);
+        let module_entry = link(module_name, &module_version, &image_common_entries)?;
         save_shared_module_file(&module_entry, &shared_module_file_path)?;
 
         Some(module_entry)
@@ -325,13 +327,74 @@ pub fn build_module(
 
         std::fs::create_dir_all(&asset_path)
             .map_err(|e| RuntimeError::Message(format!("{}", e)))?;
-        save_module_config_file_meta(module_config_timestamp_opt, &module_config_meta_file_path)?;
+        save_module_config_meta(module_config_timestamp_opt, &module_config_meta_file_path)?;
     }
 
     Ok(module_entry_opt)
 }
 
-fn save_module_config_file_meta(
+/// Recompile only if the module image (i.e. cache) does not exist.
+/// Cache checking can be bypasswd with the parameter
+/// "check_modification" and then it works just like function `build_module`.
+pub fn build_module_with_cache_check(
+    module_path: &Path,
+    include_unit_tests: bool,
+    check_modification: bool,
+) -> Result<ImageCommonEntry, RuntimeError> {
+    // module config
+    let module_config_file_path = get_module_config_file_path(module_path);
+    let module_config = load_module_config(&module_config_file_path)?;
+
+    // output folders
+    let output_path = get_output_path(module_path);
+    let hash_path = get_output_hash_path(&output_path, None);
+
+    let shared_module_file_path = get_shared_module_file_path(&hash_path, &module_config.name);
+    let is_shared_module_file_exist = shared_module_file_path.exists();
+
+    let load_module = |module_file: &Path| -> Result<ImageCommonEntry, RuntimeError> {
+        let module_binary =
+            std::fs::read(module_file).map_err(|e| RuntimeError::Message(format!("{}", e)))?;
+        read_object_file(&module_binary).map_err(|e| RuntimeError::Message(format!("{}", e)))
+    };
+
+    if is_shared_module_file_exist && !check_modification {
+        load_module(&shared_module_file_path)
+    } else {
+        match build_module(module_path, include_unit_tests) {
+            Ok(module_opt) => match module_opt {
+                // rebuild
+                Some(module) => Ok(module),
+                // no changed
+                None => load_module(&shared_module_file_path),
+            },
+            Err(e) => Err(e),
+        }
+    }
+}
+
+pub fn build_application_by_dependencies(
+    module_path: &Path,
+    check_modification: bool,
+    runtime_property: &RuntimeProperty,
+) -> Result<(), RuntimeError> {
+    let main_module = build_module_with_cache_check(module_path, true, check_modification)?;
+
+    let all_import_modules: Vec<ImageCommonEntry> = vec![];
+    // main_module.import_module_entries
+
+    todo!()
+}
+
+pub fn build_application_by_module_list(
+    module_path: &Path,
+    check_modification: bool,
+    runtime_property: &RuntimeProperty,
+) -> Result<(), RuntimeError> {
+    todo!()
+}
+
+fn save_module_config_meta(
     timestamp_opt: Option<u64>,
     module_config_file_meta_full_path: &Path,
 ) -> Result<(), RuntimeError> {
@@ -378,7 +441,7 @@ fn save_object_file(
         .map_err(|e| RuntimeError::Message(format!("{}", e)))
 }
 
-fn save_object_file_meta(
+fn save_object_meta(
     timestamp_opt: Option<u64>,
     object_file_meta_full_path: &Path,
 ) -> Result<(), RuntimeError> {
@@ -395,10 +458,16 @@ fn save_object_file_meta(
 
 fn link(
     target_module_name: &str,
+    target_module_version: &EffectiveVersion,
     submodule_entries: &[ImageCommonEntry],
 ) -> Result<ImageCommonEntry, RuntimeError> {
-    link_modules(target_module_name, true, submodule_entries)
-        .map_err(|e| RuntimeError::Message(format!("{}", e)))
+    link_modules(
+        target_module_name,
+        target_module_version,
+        true,
+        submodule_entries,
+    )
+    .map_err(|e| RuntimeError::Message(format!("{}", e)))
 }
 
 fn save_shared_module_file(
@@ -415,9 +484,7 @@ fn save_shared_module_file(
 /**
  * image_common_entries: Unsorted image common entries.
  */
-fn generate(
-    image_common_entries: &mut [ImageCommonEntry],
-) -> Result<ImageIndexEntry, RuntimeError> {
+fn index(image_common_entries: &mut [ImageCommonEntry]) -> Result<ImageIndexEntry, RuntimeError> {
     let module_entries = sort_modules(image_common_entries);
     build_indices(&image_common_entries, &module_entries)
         .map_err(|e| RuntimeError::Message(format!("{}", e)))
@@ -439,6 +506,8 @@ fn save_application_image_file(
 mod tests {
     use std::path::PathBuf;
 
+    use crate::builder::build_module_with_cache_check;
+
     use super::build_module;
 
     fn get_resources_path_buf() -> PathBuf {
@@ -457,15 +526,14 @@ mod tests {
             let mut moudle_path_buf = get_resources_path_buf();
             moudle_path_buf.push("single_module_app");
 
-            // force rebuild
-            let result0 = build_module(&moudle_path_buf, false, true);
+            // load or rebuild
+            let result0 = build_module_with_cache_check(&moudle_path_buf, false, true);
             assert!(result0.is_ok());
-            println!("{:#?}", result0);
+            // todo: check entries
 
             // unchanged
-            let result1 = build_module(&moudle_path_buf, false, false);
-            assert!(result1.is_ok());
-            println!("{:#?}", result1);
+            let result1 = build_module(&moudle_path_buf, false);
+            assert!(matches!(result1, Ok(None)));
         }
 
         // single_module_app_with_executable_units
@@ -473,15 +541,14 @@ mod tests {
             let mut moudle_path_buf = get_resources_path_buf();
             moudle_path_buf.push("single_module_app_with_executable_units");
 
-            // force rebuild
-            let result0 = build_module(&moudle_path_buf, false, true);
+            // load or rebuild
+            let result0 = build_module_with_cache_check(&moudle_path_buf, false, true);
             assert!(result0.is_ok());
-            println!("{:#?}", result0);
+            // todo: check entries
 
             // unchanged
-            let result1 = build_module(&moudle_path_buf, false, false);
-            assert!(result1.is_ok());
-            println!("{:#?}", result1);
+            let result1 = build_module(&moudle_path_buf, false);
+            assert!(matches!(result1, Ok(None)));
         }
 
         // single_module_with_unit_tests
@@ -489,15 +556,19 @@ mod tests {
             let mut moudle_path_buf = get_resources_path_buf();
             moudle_path_buf.push("single_module_with_unit_tests");
 
-            // no unit tests
-            let result0 = build_module(&moudle_path_buf, false, true);
+            // load or rebuild without unit tests
+            let result0 = build_module_with_cache_check(&moudle_path_buf, false, true);
             assert!(result0.is_ok());
-            println!("{:#?}", result0);
+            // todo: check entries
 
-            // includes unit tests
-            let result1 = build_module(&moudle_path_buf, true, true);
+            // load or rebuild with unit tests
+            let result1 = build_module_with_cache_check(&moudle_path_buf, true, true);
             assert!(result1.is_ok());
-            println!("{:#?}", result1);
+            // todo: check unit test entries
+
+            // unchanged
+            let result2 = build_module(&moudle_path_buf, true);
+            assert!(matches!(result2, Ok(None)));
         }
     }
 }

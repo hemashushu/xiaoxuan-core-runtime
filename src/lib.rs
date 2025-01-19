@@ -14,20 +14,29 @@ pub mod entry;
 pub mod fetcher;
 pub mod runner;
 
+// runtime folders
+pub const DIRECTORY_NAME_RUNTIME: &str = "runtime";
+pub const DIRECTORY_NAME_MODULES: &str = "modules";
+pub const DIRECTORY_NAME_LIBRARIES: &str = "libraries";
+
+// source files
 pub const MODULE_CONFIG_FILE_NAME: &str = "module.anc.ason";
+pub const FILE_EXTENSION_SOURCE: &str = "anc";
+pub const FILE_EXTENSION_IR: &str = "ancr";
+pub const FILE_EXTENSION_ASSEMBLY: &str = "anca";
+
+// source folders
 pub const MODULE_DIRECTORY_NAME_SRC: &str = "src";
 pub const MODULE_DIRECTORY_NAME_APP: &str = "app";
 pub const MODULE_DIRECTORY_NAME_TESTS: &str = "tests";
 
-pub const FILE_EXTENSION_SOURCE: &str = "anc";
-pub const FILE_EXTENSION_IR: &str = "ancr";
-pub const FILE_EXTENSION_ASSEMBLY: &str = "anca";
+// building files
 pub const FILE_EXTENSION_OBJECT: &str = "anco";
 pub const FILE_EXTENSION_MODULE: &str = "ancm";
 pub const FILE_EXTENSION_IMAGE: &str = "anci";
+pub const FILE_EXTENSION_META: &str = "meta.ason";
 
-pub const FILE_EXTENSION_META:&str = "meta.ason";
-
+// building folders
 pub const DIRECTORY_NAME_OUTPUT: &str = "output";
 pub const DIRECTORY_NAME_IR: &str = "ir";
 pub const DIRECTORY_NAME_ASSEMBLY: &str = "assembly";

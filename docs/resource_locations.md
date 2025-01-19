@@ -1,8 +1,8 @@
-# Pathes
+# Resource Locations
 
-## Anc Home Path
+## Anc ROOT path
 
-### the user ANC HOME path, managed by normal/unprivileged user
+### the user ANC ROOT path, managed by normal/unprivileged user
 
 default: `~/.local/lib/anc`
 
@@ -15,7 +15,7 @@ default: `~/.local/lib/anc`
 - user libraries path:
   `~/.local/lib/anc/EDITION/libraries`
 
-### the global ANC HOME path, managed by root/privileged user
+### the global ANC ROOT path, managed by root/privileged user
 
 default: `/usr/local/lib/anc`
 
@@ -28,7 +28,7 @@ default: `/usr/local/lib/anc`
 - global libraries path:
   `/usr/local/lib/anc/EDITION/libraries`
 
-### the system ANC HOME path, managed by system package manager
+### the system ANC ROOT path, managed by system package manager
 
 default: `/usr/lib/anc`
 
@@ -65,18 +65,6 @@ In particular, system-wide runtimes, modules, and applications are managed by th
 ## Repository index cache
 
 `~/.local/lib/anc/repositories/{remote_git_repo_name_path}`
-
-<!--
-`/usr/local/lib/anc/repositories/{remote_git_repo_name_path}`
--->
-
-<!--
-## Remote applications cache
-
-the cache of the remote applications and modules
-
-default path:  `/tmp/anc/{user_name}/modules`
--->
 
 ## Configuration files
 

@@ -56,3 +56,22 @@ pub enum PropertyValue {
     #[serde(rename = "eval")]
     Eval(String),
 }
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct RuntimeConfig {
+    /// Default: `~/.local/lib/anc/repositories`
+    ///
+    /// the index cache directory of a specific repository
+    /// would be `{repositories_index_cache_directory}/{remote_git_repo_name_path}`
+    pub repositories_index_cache_directory: String,
+
+    /// Optional
+    /// the default value is []
+    #[serde(default)]
+    pub module_repositories: HashMap<String, String>,
+
+    /// Optional
+    /// the default value is []
+    #[serde(default)]
+    pub library_repositories: HashMap<String, String>,
+}

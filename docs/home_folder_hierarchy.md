@@ -1,9 +1,9 @@
-# Anc Home folder hierarchy
+# Anc Root Folder Hierarchy
 
 ## Example
 
 ```text
-ANC_HOME_FOLDER
+ANC_ROOT_DIRECTORY
 |-- anc
 |-- 2025
 |   |-- runtime

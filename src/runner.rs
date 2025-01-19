@@ -7,21 +7,21 @@
 use std::{collections::HashMap, path::Path, sync::Mutex};
 
 use anc_context::{
-    external_function_table::ExternalFunctionTable, process_config::ProcessConfig,
+    external_function_table::ExternalFunctionTable, process_property::ProcessProperty,
     process_context::ProcessContext, process_resource::ProcessResource,
 };
 use anc_image::ImageError;
 use anc_processor::{multithread_process::start_program, GenericError};
 
 pub struct MappedFileProcessResource {
-    process_config: ProcessConfig,
+    process_property: ProcessProperty,
     external_function_table: Mutex<ExternalFunctionTable>,
 }
 
 impl MappedFileProcessResource {
-    pub fn new(process_config: ProcessConfig) -> Self {
+    pub fn new(process_property: ProcessProperty) -> Self {
         Self {
-            process_config,
+            process_property,
             external_function_table: Mutex::new(ExternalFunctionTable::default()),
         }
     }
@@ -54,13 +54,13 @@ pub fn launch(
     // environment variables
     environments: HashMap<String, String>,
 ) -> Result<u32, GenericError> {
-    let process_config = ProcessConfig {
+    let process_property = ProcessProperty {
         application_path: application_path.to_owned(),
         is_script: false,
         arguments,
         environments,
     };
-    let resource = MappedFileProcessResource::new(process_config);
+    let resource = MappedFileProcessResource::new(process_property);
     let process_context = resource.create_process_context()?;
     start_program(&process_context, entry_point_name, vec![])
 }
