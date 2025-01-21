@@ -20,7 +20,7 @@
 - `anc uninstall|remove [--global] <application_name>`
   Removes an installed application.
 
-- `anc clean [--global]`
+- `anc prune [--global]`
   Removes unused modules or versions.
 
 - `anc download <module> [-o <path>]`
@@ -45,7 +45,7 @@
 
 ## Other
 
-- `anc self-upgrade`
+- `anc self update`
   Updates the `anc` command itself.
 
 ## Redirecting

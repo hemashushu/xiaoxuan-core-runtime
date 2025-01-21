@@ -285,10 +285,10 @@ pub fn list_assembly_files(scan_start_path: &Path) -> Result<Vec<PathWithTimesta
     let mut subfolders = VecDeque::new();
 
     let start_path_buf = PathBuf::from(scan_start_path);
-    subfolders.push_front(start_path_buf);
+    subfolders.push_back(start_path_buf);
 
     while subfolders.len() > 0 {
-        let current_path_buf = subfolders.pop_back().unwrap();
+        let current_path_buf = subfolders.pop_front().unwrap();
         let current_dir = std::fs::read_dir(current_path_buf)
             .map_err(|e| RuntimeError::Message(format!("{}", e)))?;
 
@@ -304,7 +304,7 @@ pub fn list_assembly_files(scan_start_path: &Path) -> Result<Vec<PathWithTimesta
             let path_buf = entry.path();
 
             if metadata.is_dir() {
-                subfolders.push_front(path_buf);
+                subfolders.push_back(path_buf);
             } else {
                 if matches!(
                     path_buf.extension().map(|e| e.to_str().unwrap()),

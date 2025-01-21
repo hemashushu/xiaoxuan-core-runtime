@@ -6,16 +6,36 @@
 
 use std::path::Path;
 
-use anc_image::entry::ImportModuleEntry;
+use anc_isa::EffectiveVersion;
 
-use crate::{common::RuntimeProperty, RuntimeError};
+use crate::{entry::RuntimeConfig, RuntimeError};
 
-/// Download the specified module from center repository or
-/// remote Git repository.
+pub struct RemoteLocation {
+    pub url: String,
+    pub revision: String,
+}
+
+impl RemoteLocation {
+    pub fn new(url: &str, revision: &str) -> Self {
+        Self {
+            url: url.to_owned(),
+            revision: revision.to_owned(),
+        }
+    }
+}
+
+/// Download a module from the specified remote Git repository.
 pub fn download_module(
-    import_module_entry: &ImportModuleEntry,
-    runtime_property: &RuntimeProperty,
-    output_folder_opt: Option<&Path>,
+    remote_location: &RemoteLocation,
+    output_directory: &Path,
 ) -> Result<(), RuntimeError> {
+    todo!()
+}
+
+pub fn get_shared_module_remote_location(
+    runtime_config: &RuntimeConfig,
+    module_name: &str,
+    module_version: &EffectiveVersion,
+) -> Result<RemoteLocation, RuntimeError> {
     todo!()
 }

@@ -75,3 +75,28 @@ pub struct RuntimeConfig {
     #[serde(default)]
     pub library_repositories: HashMap<String, String>,
 }
+
+impl RuntimeConfig {
+    /// new default
+    pub fn new() -> Self {
+        let repositories_index_cache_directory = "~/.local/lib/anc/repositories".to_owned();
+
+        let mut module_repositories = HashMap::<String, String>::new();
+        module_repositories.insert(
+            "default".to_owned(),
+            "https://github.com/hemashushu/xiaoxuan-core-repository".to_owned(),
+        );
+        module_repositories.insert(
+            "default-mirror".to_owned(),
+            "https://gitlab.com/hemashushu/xiaoxuan-core-repository".to_owned(),
+        );
+
+        let library_repositories = HashMap::<String, String>::new();
+
+        Self {
+            repositories_index_cache_directory,
+            module_repositories,
+            library_repositories,
+        }
+    }
+}

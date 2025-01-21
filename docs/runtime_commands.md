@@ -24,39 +24,28 @@
 - `ancrt new -f <file_name>`
   Creates a new single-file application.
 
-- `ancrt mod add <module_name>`
-  Adds a dependent module to the current module.
+- `ancrt add <module_name>[@<version>]`
+  Adds a dependent shared module to the current module.
 
-- `ancrt lib add <library_name>`
-  Adds a dependent library to the current module.
+- `ancrt add --path <path>` and `ancrt add --git <url>`
+  Adds a dependent local or remote module to the current module.
+
+- `ancrt add -l <library_name>`
+  Adds a dependent shared library to the current module.
 
 - `ancrt test [unit_test_name]`
   Runs unit tests for the current module. The `unit_test_name` can be the name of a submodule (e.g. "client" for the namespace "tests::client", note that the name of the module does not need to be specified), or the path name of a unit test function (e.g. "client::test_get" for the function "tests::client::test_get).
 
-- `ancrt build <path/to/application>`
+- `ancrt build [path/to/module]`
   Builds the binary image for the specified application or module. When building an application, all dependent modules and libraries will be automatically downloaded.
 
-<!--
-- `ancrt build -r <path/to/source>`
-  Builds the intermediate representation (IR) (*.ancr) for the source file.
-
-- `ancrt build -a <path/to/source>`
-  Builds the assembly code (*.anca) for the source file or IR.
-
-- `ancrt build -o <path/to/source>`
-  Builds the object file (*.anco) for the source file, IR or assembly.
-
-- `ancrt build -m <path/to/object_file...>`
-  Links the object files to a module image (*.ancm).
-
-- `ancrt build -i <path/to/module_image>`
-  Generates the application image (*.anci) from the main module image.
--->
+- `ancrt clean [path/to/module]`
+  Remove artifacts that builder generated.
 
 ## Binutils
 
 - `ancrt dump <image>`
-  Displays the contents of a binary image (the type of image can be an application, shared module, and object file), the image can be a local file, a remote module, or a remote application.
+  Displays the contents of a binary image (the type of image can be an application, shared module, and object file).
 
 - `ancrt dump -s <section_name> <image>`
   Displays the contents of a specific section.
