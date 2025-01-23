@@ -1,0 +1,15 @@
+// Copyright (c) 2025 Hemashushu <hippospark@gmail.com>, All rights reserved.
+//
+// This Source Code Form is subject to the terms of
+// the Mozilla Public License version 2.0 and additional exceptions,
+// more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
+
+import fn module::calc()->i32
+
+// returns 11
+fn _start()->i32 {
+    if -> i32
+        eq_i32(call(calc), imm_i32(348))
+        imm_i32(11)
+        imm_i32(13)
+}

@@ -19,6 +19,7 @@ use anc_isa::{ModuleDependencyType, RUNTIME_EDITION_STRING};
 use anc_linker::DEFAULT_ENTRY_FUNCTION_NAME;
 use anc_processor::{multithread_process::start_program, GenericError};
 use memmap2::Mmap;
+use resolve_path::PathResolveExt;
 
 use crate::{
     builder::build_application_by_dependencies,
@@ -41,7 +42,7 @@ pub fn launch_application(
     //
     // - 'app_module_name::tests::{submodule_name}::test_*' for unit tests.
     //   internal entry point name is "submodule_name::test_*".
-    //   public executable unit name is "{submodule_name}" or "{submodule_name}::test_{*}"
+    //   public executable unit name is matching any prefix of "submodule_name::test_*"
     executable_unit_name: &str,
 
     // program arguments
@@ -51,15 +52,19 @@ pub fn launch_application(
     environments: HashMap<String, String>,
 ) -> Result<u32, GenericError> {
     let runtime_config = RuntimeConfig::load_and_merge_user_config()?;
+    let anc_root_path = runtime_config
+        .user_anc_root_directory
+        .try_resolve()
+        .unwrap();
 
-    let home_path_buf = std::env::home_dir().unwrap();
-    let anc_root_path_buf = home_path_buf.join(".local/lib/anc");
-    if !anc_root_path_buf.exists() {
-        std::fs::create_dir_all(&anc_root_path_buf).unwrap();
+    if !anc_root_path.exists() {
+        std::fs::create_dir_all(&anc_root_path).unwrap();
     }
 
-    let runtime_property =
-        RuntimeProperty::new(anc_root_path_buf, RUNTIME_EDITION_STRING.to_owned());
+    let runtime_property = RuntimeProperty::new(
+        anc_root_path.to_path_buf(),
+        RUNTIME_EDITION_STRING.to_owned(),
+    );
 
     let (image_files, _entry_point_entries) =
         load_local_application(module_path, &runtime_property, &runtime_config)?;
@@ -90,7 +95,7 @@ pub fn launch_single_file_application() -> Result<u32, GenericError> {
     todo!()
 }
 
-pub fn launch_unit_tests() {
+pub fn launch_unit_tests() -> Result<Vec<(String, bool)>, GenericError> {
     todo!()
 }
 
@@ -108,7 +113,7 @@ fn execute_unit(
     //
     // - 'app_module_name::tests::{submodule_name}::test_*' for unit tests.
     //   internal entry point name is "submodule_name::test_*".
-    //   public executable unit name is "{submodule_name}" or "{submodule_name}::test_{*}"
+    //   public executable unit name is matching any prefix of "submodule_name::test_*"
     entry_point_name: &str,
     process_property: ProcessProperty,
 ) -> Result<u32, GenericError> {
@@ -272,6 +277,22 @@ mod tests {
             );
 
             assert_eq!(result2.unwrap(), 5);
+        }
+
+        // multiple_module_app
+        {
+            let mut moudle_path_buf = get_resources_path_buf();
+            moudle_path_buf.push("multiple_module_app");
+            moudle_path_buf.push("cli");
+
+            let result0 = launch_application(
+                &moudle_path_buf,
+                "",
+                vec![],
+                HashMap::<String, String>::new(),
+            );
+
+            assert_eq!(result0.unwrap(), 11);
         }
     }
 }

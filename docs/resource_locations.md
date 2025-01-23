@@ -76,23 +76,19 @@ Configuration files are inherited, i.e. the user-type runtime will read both con
 ## Installed application scripts and symbolic links
 
 - User
-  local application source files:
-  `~/.local/lib/anc/applicatons/{app_name}`
   shell scripts folder:
-  `~/.local/lib/anc/scripts`
+  `~/.local/lib/anc/applicatons`
   symbol links:
   `~/.local/bin/{app_name}`
 
 - Global
-  local application source files:
-  `/usr/local/lib/anc/applicatons/{app_name}`
   shell scripts folder:
-  `/usr/local/lib/anc/scripts`
+  `/usr/local/lib/anc/applications`
   symbol links:
   `/usr/local/bin`
 
 - System
   scripts folder:
-  `/usr/lib/anc/applications/{app_name}`
+  `/usr/lib/anc/applications`
   symbol links:
   `/usr/bin`

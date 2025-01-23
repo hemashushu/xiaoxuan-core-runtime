@@ -49,10 +49,10 @@ pub struct RuntimeProperty {
     /// - User: `~/.local/lib/anc`
     /// - Global: `/usr/local/lib/anc`
     /// - System: `/usr/lib/anc`
-    current_anc_root_path: PathBuf,
+    anc_root_path: PathBuf,
 
     /// e.g. "2025"
-    current_edition: String,
+    edition: String,
 }
 
 /*
@@ -385,10 +385,10 @@ pub fn list_object_files(object_file_directory: &Path) -> Result<Vec<PathBuf>, R
 }
 
 impl RuntimeProperty {
-    pub fn new(current_anc_root_path: PathBuf, current_edition: String) -> Self {
+    pub fn new(anc_root_path: PathBuf, edition: String) -> Self {
         Self {
-            current_anc_root_path,
-            current_edition,
+            anc_root_path,
+            edition,
         }
     }
 
@@ -396,8 +396,8 @@ impl RuntimeProperty {
     /// - Global: `/usr/local/lib/anc/EDITION/runtime`
     /// - System: `/usr/lib/anc/EDITION/runtime`
     pub fn get_runtime_directory(&self) -> PathBuf {
-        let mut path_buf = PathBuf::from(&self.current_anc_root_path);
-        path_buf.push(&self.current_edition);
+        let mut path_buf = PathBuf::from(&self.anc_root_path);
+        path_buf.push(&self.edition);
         path_buf.push(DIRECTORY_NAME_RUNTIME);
         path_buf
     }
@@ -429,8 +429,8 @@ impl RuntimeProperty {
     /// - Global: `/usr/local/lib/anc/EDITION/modules`
     /// - System: `/usr/lib/anc/EDITION/modules`
     pub fn get_modules_directory(&self) -> PathBuf {
-        let mut path_buf = PathBuf::from(&self.current_anc_root_path);
-        path_buf.push(&self.current_edition);
+        let mut path_buf = PathBuf::from(&self.anc_root_path);
+        path_buf.push(&self.edition);
         path_buf.push(DIRECTORY_NAME_MODULES);
         path_buf
     }
@@ -439,8 +439,8 @@ impl RuntimeProperty {
     /// - Global: `/usr/local/lib/anc/EDITION/libraries`
     /// - System: `/usr/lib/anc/EDITION/libraries`
     pub fn get_libraries_directory(&self) -> PathBuf {
-        let mut path_buf = PathBuf::from(&self.current_anc_root_path);
-        path_buf.push(&self.current_edition);
+        let mut path_buf = PathBuf::from(&self.anc_root_path);
+        path_buf.push(&self.edition);
         path_buf.push(DIRECTORY_NAME_MODULES);
         path_buf
     }

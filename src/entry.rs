@@ -75,7 +75,16 @@ pub struct RuntimeConfig {
     ///
     /// the index cache directory of a specific repository
     /// would be `{repositories_index_cache_directory}/{remote_git_repo_name_path}`
+    #[serde(default)]
     pub index_cache_directory: String,
+
+    /// `~/.local/lib/anc`
+    #[serde(default)]
+    pub user_anc_root_directory: String,
+
+    /// `/etc/anc/config.ason`
+    #[serde(default)]
+    pub global_anc_root_directory: String,
 
     /// Optional
     /// the default value is []
@@ -91,6 +100,8 @@ pub struct RuntimeConfig {
 impl RuntimeConfig {
     fn new() -> Self {
         let index_cache_directory = "~/.local/lib/anc/repositories".to_owned();
+        let user_anc_root_directory = "~/.local/lib/anc".to_owned();
+        let global_anc_root_directory = "/etc/anc/config.ason".to_owned();
 
         let mut module_repositories = HashMap::<String, Repository>::new();
         module_repositories.insert(
@@ -105,6 +116,8 @@ impl RuntimeConfig {
 
         Self {
             index_cache_directory,
+            user_anc_root_directory,
+            global_anc_root_directory,
             module_repositories,
             library_repositories,
         }

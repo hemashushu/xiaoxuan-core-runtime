@@ -1,0 +1,22 @@
+// Copyright (c) 2025 Hemashushu <hippospark@gmail.com>, All rights reserved.
+//
+// This Source Code Form is subject to the terms of
+// the Mozilla Public License version 2.0 and additional exceptions,
+// more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
+
+import fn module::primitive::add(i32,i32)->i32
+import fn module::primitive::mul(i32,i32)->i32
+
+pub fn inc(num:i32) -> i32 {
+    call(add
+        local_load_i32_s(num),
+        imm_i32(1)
+    )
+}
+
+pub fn double(num:i32) -> i32 {
+    call(mul
+        local_load_i32_s(num)
+        imm_i32(2)
+    )
+}

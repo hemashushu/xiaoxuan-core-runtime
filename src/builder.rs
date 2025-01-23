@@ -22,6 +22,7 @@ use anc_linker::{
     linker::link_modules,
 };
 use anc_parser_asm::{parser::parse_from_str, NAME_PATH_SEPARATOR};
+use resolve_path::PathResolveExt;
 
 use crate::{
     common::{
@@ -94,13 +95,13 @@ pub fn build_module(
     //
     // the target of "pending source" file will be appended to the "pending ir",
     // as well as the target of "pending ir" file will be appended to the "pending assembly".
-    let mut pending_source_items: Vec<BuildPendingItem> = vec![];
+    let mut pending_source_items: Vec<SourceBuildPendingItem> = vec![];
     let mut ir_files: Vec<PathBuf> = vec![];
 
-    let mut pending_ir_items: Vec<BuildPendingItem> = vec![];
+    let mut pending_ir_items: Vec<SourceBuildPendingItem> = vec![];
     let mut assembly_files: Vec<PathBuf> = vec![];
 
-    let mut pending_assemble_items: Vec<BuildPendingItem> = vec![];
+    let mut pending_assemble_items: Vec<SourceBuildPendingItem> = vec![];
     let mut object_files: Vec<PathBuf> = vec![];
 
     // check source files
@@ -190,7 +191,7 @@ pub fn build_module(
                 || !is_object_file_exists // re-assemble when object file does not exist
                 || is_assembly_file_changed
             {
-                pending_assemble_items.push(BuildPendingItem {
+                pending_assemble_items.push(SourceBuildPendingItem {
                     source_path_buf: file_path,
                     meta_file_path: assembly_meta_file_path,
                     canonical_name,
@@ -310,12 +311,12 @@ pub fn build_module(
 }
 
 /// Recompile only if the module image (i.e. cache) does not exist.
-/// Cache checking can be bypasswd with the parameter
-/// "check_modification" and then it works just like function `build_module`.
+/// Cache checking can be bypasswd with the parameter "force_check_modification",
+/// it works like function `build_module` when "force_check_modification == true"  .
 pub fn build_module_with_cache_check(
     module_path: &Path,
     include_unit_tests: bool,
-    check_modification: bool,
+    force_check_modification: bool,
 ) -> Result<ImageCommonEntry, RuntimeError> {
     // module config
     let module_config_file_path = get_module_config_file_path(module_path);
@@ -334,7 +335,7 @@ pub fn build_module_with_cache_check(
         read_object_file(&module_binary).map_err(|e| RuntimeError::Message(format!("{}", e)))
     };
 
-    if is_shared_module_file_exist && !check_modification {
+    if is_shared_module_file_exist && !force_check_modification {
         load_module(&shared_module_file_path)
     } else {
         match build_module(module_path, include_unit_tests) {
@@ -350,15 +351,23 @@ pub fn build_module_with_cache_check(
 }
 
 pub fn build_module_by_dependency(
-    module_name: &str,
-    module_dependency: &ModuleDependency,
+    parent_module_path: &Path,
+    import_module_entry: &ImportModuleEntry,
     runtime_property: &RuntimeProperty,
     runtime_config: &RuntimeConfig,
-) -> Result<ImageCommonEntry, RuntimeError> {
-    let (module_path, check_modification) = match module_dependency {
+) -> Result<(PathBuf, ImageCommonEntry), RuntimeError> {
+    let ImportModuleEntry {
+        name: module_name,
+        value: module_dependency,
+    } = import_module_entry;
+
+    let (module_path, force_check_modification) = match module_dependency.as_ref() {
         ModuleDependency::Local(dependency_local) => {
-            let path_buf = PathBuf::from(&dependency_local.path);
-            (path_buf, true)
+            let path_buf = dependency_local
+                .path
+                .try_resolve_in(parent_module_path)
+                .map_err(|e| RuntimeError::Message(format!("{}", e)))?;
+            (path_buf.to_path_buf(), true)
         }
         ModuleDependency::Remote(dependency_remote) => {
             // check existance
@@ -409,7 +418,9 @@ pub fn build_module_by_dependency(
         ModuleDependency::Current => unreachable!(),
     };
 
-    build_module_with_cache_check(&module_path, false, check_modification)
+    let image_common_entry =
+        build_module_with_cache_check(&module_path, false, force_check_modification)?;
+    Ok((module_path, image_common_entry))
 }
 
 pub fn build_application_by_dependencies(
@@ -428,9 +439,10 @@ pub fn build_application_by_dependencies(
     };
 
     let add_import_module_entries_to_pending =
-        |current_module_name: &str, // for generating error message
+        |current_module_name: &str,  // for generating error message
+         current_module_path: &Path, // for resolve local dependent module path
          current_module_dependency_type: ModuleDependencyType,
-         pending_import_module_entries: &mut VecDeque<ImportModuleEntry>,
+         pending_import_module_items: &mut VecDeque<ModuleBuildPendingItem>,
          new_import_module_entries: &[ImportModuleEntry]|
          -> Result<(), RuntimeError> {
             // check the dependency type of (new) import module entry
@@ -500,14 +512,17 @@ pub fn build_application_by_dependencies(
                     continue;
                 }
 
-                pending_import_module_entries.push_back(new_import_module_entry.to_owned());
+                pending_import_module_items.push_back(ModuleBuildPendingItem {
+                    parent_module_path_buf: current_module_path.to_path_buf(),
+                    import_module_entry: new_import_module_entry.to_owned(),
+                });
             }
 
             Ok(())
         };
 
     let mut loaded_module_items: Vec<(ModuleDependency, ImageCommonEntry)> = vec![];
-    let mut pending_import_module_entries = VecDeque::<ImportModuleEntry>::new();
+    let mut pending_import_module_items = VecDeque::<ModuleBuildPendingItem>::new();
 
     let main_module = build_module_with_cache_check(
         module_path,
@@ -519,26 +534,33 @@ pub fn build_application_by_dependencies(
 
     add_import_module_entries_to_pending(
         &module_name,
+        module_path,
         module_dependency_type,
-        &mut pending_import_module_entries,
+        &mut pending_import_module_items,
         &main_module.import_module_entries,
     )?;
 
-    while !pending_import_module_entries.is_empty() {
-        let import_module_entry = pending_import_module_entries.pop_front().unwrap();
-        let new_module = build_module_by_dependency(
-            &import_module_entry.name,
-            &import_module_entry.value,
+    while !pending_import_module_items.is_empty() {
+        let module_build_pending_item = pending_import_module_items.pop_front().unwrap();
+        let (new_module_path, new_module) = build_module_by_dependency(
+            &module_build_pending_item.parent_module_path_buf,
+            &module_build_pending_item.import_module_entry,
             runtime_property,
             runtime_config,
         )?;
-        let new_module_denpendency = import_module_entry.value.as_ref().to_owned();
+
+        let new_module_denpendency = module_build_pending_item
+            .import_module_entry
+            .value
+            .as_ref()
+            .to_owned();
         let new_module_dependency_type = get_module_dependency_type(&new_module_denpendency);
 
         add_import_module_entries_to_pending(
             &new_module.name,
+            &new_module_path,
             new_module_dependency_type,
-            &mut pending_import_module_entries,
+            &mut pending_import_module_items,
             &new_module.import_module_entries,
         )?;
 
@@ -785,7 +807,7 @@ fn save_application_image_file(
         .map_err(|e| RuntimeError::Message(format!("{}", e)))
 }
 
-struct BuildPendingItem {
+struct SourceBuildPendingItem {
     // the path of source file (*.anc, *.ancr, and *.anca)
     source_path_buf: PathBuf,
     meta_file_path: PathBuf,
@@ -795,6 +817,11 @@ struct BuildPendingItem {
     // the timestamp of source file (*.anc, *.ancr, and *.anca),
     // it is NOT timestamp of generated file (*.ancr and *.anca in the folder "asset").
     timestamp_opt: Option<u64>,
+}
+
+struct ModuleBuildPendingItem {
+    parent_module_path_buf: PathBuf,
+    import_module_entry: ImportModuleEntry,
 }
 
 /// Used to get the relative path, canonical name, and submodule name path
@@ -818,6 +845,7 @@ mod tests {
     use std::path::PathBuf;
 
     use anc_isa::{ModuleDependencyType, RUNTIME_EDITION_STRING};
+    use resolve_path::PathResolveExt;
 
     use crate::{
         builder::{build_application_by_dependencies, build_module_with_cache_check},
@@ -891,15 +919,20 @@ mod tests {
 
     #[test]
     fn test_build_application_by_dependencies() {
-        let home_path_buf = std::env::home_dir().unwrap();
-        let anc_root_path_buf = home_path_buf.join(".local/lib/anc");
-        if !anc_root_path_buf.exists() {
-            std::fs::create_dir_all(&anc_root_path_buf).unwrap();
+        let runtime_config = RuntimeConfig::load_and_merge_user_config().unwrap();
+        let anc_root_path = runtime_config
+            .user_anc_root_directory
+            .try_resolve()
+            .unwrap();
+
+        if !anc_root_path.exists() {
+            std::fs::create_dir_all(&anc_root_path).unwrap();
         }
 
-        let runtime_property =
-            RuntimeProperty::new(anc_root_path_buf, RUNTIME_EDITION_STRING.to_owned());
-        let runtime_config = RuntimeConfig::load_and_merge_user_config().unwrap();
+        let runtime_property = RuntimeProperty::new(
+            anc_root_path.to_path_buf(),
+            RUNTIME_EDITION_STRING.to_owned(),
+        );
 
         // single_module_app
         {
@@ -943,6 +976,24 @@ mod tests {
                 &runtime_config,
             );
             assert!(result0.is_ok());
+            // todo: check entries
+        }
+
+        // multiple_module_app
+        {
+            let mut moudle_path_buf = get_resources_path_buf();
+            moudle_path_buf.push("multiple_module_app");
+            moudle_path_buf.push("cli");
+
+            let result0 = build_application_by_dependencies(
+                &moudle_path_buf,
+                ModuleDependencyType::Local,
+                &runtime_property,
+                &runtime_config,
+            );
+
+            assert!(result0.is_ok());
+            println!("{:#?}", result0.unwrap());
             // todo: check entries
         }
     }

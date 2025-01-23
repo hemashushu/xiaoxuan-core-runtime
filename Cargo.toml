@@ -3,6 +3,10 @@ name = "anc-runtime"
 version = "0.2.0"
 edition = "2021"
 
+[[bin]]
+name = "ancrt"
+path = "src/main.rs"
+
 [dependencies]
 anc-isa = { path = "../xiaoxuan-core-isa" }
 anc-image = { path = "../xiaoxuan-core-image" }
@@ -20,6 +24,7 @@ gix = { version = "0.70.0", features = [
 ] }
 clap = "4.5.27"
 memmap2 = "0.9.5"
+resolve-path = "0.1.0"
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"

@@ -1,5 +1,5 @@
 {
-    name: "multiple_module_app_base"
+    name: "mma_base"
     version: "1.0.0"
     edition: "2025"
 }

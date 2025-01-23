@@ -5,6 +5,7 @@
 ```text
 ANC_ROOT_DIRECTORY
   |-- anc                   # The launcher executable file
+  |-- config.ason           # The runtime config file
   |-- 2025                  # Edition
   |   |-- runtime           # Runtime directory
   |   |   |-- ancrt         # The runtime executable file
