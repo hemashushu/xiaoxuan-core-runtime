@@ -9,6 +9,8 @@ use std::collections::HashMap;
 use anc_isa::{ExternalLibraryDependency, ModuleDependency};
 use serde::{Deserialize, Serialize};
 
+use crate::RuntimeError;
+
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct ModuleConfig {
     pub name: String,
@@ -108,12 +110,12 @@ impl RuntimeConfig {
         }
     }
 
-    pub fn load_and_merge_global_config() -> Self {
+    pub fn load_and_merge_global_config() -> Result<Self, RuntimeError> {
         // todo
-        Self::new()
+        Ok(Self::new())
     }
 
-    pub fn load_and_merge_user_config() -> Self {
+    pub fn load_and_merge_user_config() -> Result<Self, RuntimeError> {
         // todo
         Self::load_and_merge_global_config()
     }

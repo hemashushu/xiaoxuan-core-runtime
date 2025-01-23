@@ -6,6 +6,7 @@
 
 import fn module::calc()->i32
 
+// returns 11
 fn _start()->i32 {
     if -> i32
         eq_i32(call(calc), imm_i32(348))

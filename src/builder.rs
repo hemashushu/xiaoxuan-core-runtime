@@ -26,44 +26,16 @@ use anc_parser_asm::{parser::parse_from_str, NAME_PATH_SEPARATOR};
 use crate::{
     common::{
         get_app_path, get_application_image_file_path, get_asset_assembly_path, get_asset_ir_path,
-        get_asset_object_path, get_dependencies_by_module_config, get_file_timestamp, get_hash_asset_path,
-        get_mata_file_path, get_mata_file_path_by_full_name, get_module_config_file_path,
-        get_object_file_path, get_output_hash_path, get_output_path, get_shared_module_file_path,
-        get_src_path, get_tests_path, list_assembly_files, load_file_meta, load_module_config,
-        FileMeta, PathWithTimestamp, RuntimeProperty,
+        get_asset_object_path, get_dependencies_by_module_config, get_file_timestamp,
+        get_hash_asset_path, get_mata_file_path, get_mata_file_path_by_full_name,
+        get_module_config_file_path, get_object_file_path, get_output_hash_path, get_output_path,
+        get_shared_module_file_path, get_src_path, get_tests_path, list_assembly_files,
+        load_file_meta, load_module_config, FileMeta, PathWithTimestamp, RuntimeProperty,
     },
     entry::RuntimeConfig,
     fetcher::{download_module, get_shared_module_remote_location, RemoteLocation},
     RuntimeError, MODULE_CONFIG_FILE_NAME, VERSION_NAME_LOCAL_AND_REMOTE,
 };
-
-struct BuildPendingItem {
-    // the path of source file (*.anc, *.ancr, and *.anca)
-    source_path_buf: PathBuf,
-    meta_file_path: PathBuf,
-    canonical_name: String,
-    submodule_name_path: String,
-
-    // the timestamp of source file (*.anc, *.ancr, and *.anca),
-    // it is NOT timestamp of generated file (*.ancr and *.anca in the folder "asset").
-    timestamp_opt: Option<u64>,
-}
-
-/// Used to get the relative path, canonical name, and submodule name path
-/// of the source file.
-///
-/// e.g.
-///
-/// - source: "/home/yang/projects/helloworld/src/network/http/get.anca"
-/// - prefix: "/home/yang/projects/helloworld/src"
-/// - relative path: "network/http/get.anca"
-/// - name path: "network/http/get"
-/// - canonical name: "network-http-get"
-/// - submodule name path: "network::http::get"
-struct ScanStartItem {
-    source_path: PathBuf,
-    prefix_path: PathBuf,
-}
 
 /// Compile the specified module and generate the module image file.
 /// The last modification time of source files is checked and no
@@ -75,7 +47,8 @@ pub fn build_module(
     // module config
     let module_config_file_path = get_module_config_file_path(module_path);
     let module_config = load_module_config(&module_config_file_path)?;
-    let (import_module_entries, external_library_entries) = get_dependencies_by_module_config(&module_config);
+    let (import_module_entries, external_library_entries) =
+        get_dependencies_by_module_config(&module_config);
 
     // output folders
     let output_path = get_output_path(module_path);
@@ -695,10 +668,11 @@ pub fn build_application_by_dependencies(
     Ok((common_entry, index_entry, application_image_file_full_path))
 }
 
-pub fn build_application_by_module_list(
+pub fn build_application_by_dependency_list(
     module_path: &Path,
-    check_modification: bool,
+    module_dependency_type: ModuleDependencyType,
     runtime_property: &RuntimeProperty,
+    runtime_config: &RuntimeConfig,
 ) -> Result<(), RuntimeError> {
     todo!()
 }
@@ -811,11 +785,39 @@ fn save_application_image_file(
         .map_err(|e| RuntimeError::Message(format!("{}", e)))
 }
 
+struct BuildPendingItem {
+    // the path of source file (*.anc, *.ancr, and *.anca)
+    source_path_buf: PathBuf,
+    meta_file_path: PathBuf,
+    canonical_name: String,
+    submodule_name_path: String,
+
+    // the timestamp of source file (*.anc, *.ancr, and *.anca),
+    // it is NOT timestamp of generated file (*.ancr and *.anca in the folder "asset").
+    timestamp_opt: Option<u64>,
+}
+
+/// Used to get the relative path, canonical name, and submodule name path
+/// of the source file.
+///
+/// e.g.
+///
+/// - source: "/home/yang/projects/helloworld/src/network/http/get.anca"
+/// - prefix: "/home/yang/projects/helloworld/src"
+/// - relative path: "network/http/get.anca"
+/// - name path: "network/http/get"
+/// - canonical name: "network-http-get"
+/// - submodule name path: "network::http::get"
+struct ScanStartItem {
+    source_path: PathBuf,
+    prefix_path: PathBuf,
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
-    use anc_isa::{ModuleDependencyType, RUNTIME_EDITION_STR};
+    use anc_isa::{ModuleDependencyType, RUNTIME_EDITION_STRING};
 
     use crate::{
         builder::{build_application_by_dependencies, build_module_with_cache_check},
@@ -889,23 +891,56 @@ mod tests {
 
     #[test]
     fn test_build_application_by_dependencies() {
+        let home_path_buf = std::env::home_dir().unwrap();
+        let anc_root_path_buf = home_path_buf.join(".local/lib/anc");
+        if !anc_root_path_buf.exists() {
+            std::fs::create_dir_all(&anc_root_path_buf).unwrap();
+        }
+
+        let runtime_property =
+            RuntimeProperty::new(anc_root_path_buf, RUNTIME_EDITION_STRING.to_owned());
+        let runtime_config = RuntimeConfig::load_and_merge_user_config().unwrap();
+
         // single_module_app
         {
-            let home_path_buf = std::env::home_dir().unwrap();
-            let anc_root_path_buf = home_path_buf.join(".local/lib/anc");
-            if !anc_root_path_buf.exists() {
-                std::fs::create_dir_all(&anc_root_path_buf).unwrap();
-            }
-
             let mut moudle_path_buf = get_resources_path_buf();
             moudle_path_buf.push("single_module_app");
 
-            // rebuild
             let result0 = build_application_by_dependencies(
                 &moudle_path_buf,
                 ModuleDependencyType::Local,
-                &RuntimeProperty::new(anc_root_path_buf, RUNTIME_EDITION_STR.to_owned()),
-                &RuntimeConfig::load_and_merge_user_config(),
+                &runtime_property,
+                &runtime_config,
+            );
+            assert!(result0.is_ok());
+            // todo: check entries
+        }
+
+        // single_module_app_with_executable_units
+        {
+            let mut moudle_path_buf = get_resources_path_buf();
+            moudle_path_buf.push("single_module_app_with_executable_units");
+
+            let result0 = build_application_by_dependencies(
+                &moudle_path_buf,
+                ModuleDependencyType::Local,
+                &runtime_property,
+                &runtime_config,
+            );
+            assert!(result0.is_ok());
+            // todo: check entries
+        }
+
+        // single_module_with_unit_tests
+        {
+            let mut moudle_path_buf = get_resources_path_buf();
+            moudle_path_buf.push("single_module_with_unit_tests");
+
+            let result0 = build_application_by_dependencies(
+                &moudle_path_buf,
+                ModuleDependencyType::Local,
+                &runtime_property,
+                &runtime_config,
             );
             assert!(result0.is_ok());
             // todo: check entries

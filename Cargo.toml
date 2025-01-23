@@ -13,11 +13,13 @@ anc-assembler = { path = "../xiaoxuan-core-assembly/crates/assembler" }
 anc-linker = { path = "../xiaoxuan-core-linker" }
 serde = { version = "1.0.216", features = ["derive"] }
 ason = "1.4.0"
-gix = { version = "0.69.1", features = [
+gix = { version = "0.70.0", features = [
     "worktree-mutation",
     "blocking-network-client",
     "blocking-http-transport-reqwest-rust-tls",
 ] }
+clap = "4.5.27"
+memmap2 = "0.9.5"
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"
