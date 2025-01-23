@@ -16,6 +16,7 @@ use anc_image::{
     entry::{ExternalLibraryEntry, ImportModuleEntry},
     format_dependency_hash, DependencyHash, ZERO_DEPENDENCY_HASH,
 };
+use anc_isa::ModuleDependency;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -24,7 +25,7 @@ use crate::{
     DIRECTORY_NAME_OUTPUT, DIRECTORY_NAME_RUNTIME, FILE_EXTENSION_ASSEMBLY, FILE_EXTENSION_IMAGE,
     FILE_EXTENSION_IR, FILE_EXTENSION_META, FILE_EXTENSION_MODULE, FILE_EXTENSION_OBJECT,
     MODULE_CONFIG_FILE_NAME, MODULE_DIRECTORY_NAME_APP, MODULE_DIRECTORY_NAME_SRC,
-    MODULE_DIRECTORY_NAME_TESTS,
+    MODULE_DIRECTORY_NAME_TESTS, VERSION_NAME_LOCAL_AND_REMOTE,
 };
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -48,11 +49,52 @@ pub struct RuntimeProperty {
     /// - User: `~/.local/lib/anc`
     /// - Global: `/usr/local/lib/anc`
     /// - System: `/usr/lib/anc`
-    current_root: PathBuf,
+    current_anc_root_path: PathBuf,
 
     /// e.g. "2025"
     current_edition: String,
 }
+
+/*
+ * path of modules
+ */
+
+pub fn get_module_path_by_dependency(
+    module_name: &str,
+    module_dependency: &ModuleDependency,
+    runtime_property: &RuntimeProperty,
+) -> PathBuf {
+    match module_dependency {
+        ModuleDependency::Local(dependency_local) => {
+            let path_buf = PathBuf::from(&dependency_local.path);
+            path_buf
+        }
+        ModuleDependency::Remote(_) => {
+            // check existance
+            let mut path_buf = runtime_property.get_modules_directory();
+            path_buf.push(module_name);
+            path_buf.push(VERSION_NAME_LOCAL_AND_REMOTE);
+            path_buf
+        }
+        ModuleDependency::Share(dependency_share) => {
+            // check existance
+            let mut path_buf = runtime_property.get_modules_directory();
+            path_buf.push(module_name);
+            path_buf.push(&dependency_share.version);
+            path_buf
+        }
+        ModuleDependency::Runtime => {
+            let mut path_buf = runtime_property.get_builtin_modules_directory();
+            path_buf.push(module_name);
+            path_buf
+        }
+        ModuleDependency::Current => unreachable!(),
+    }
+}
+
+/*
+ * path of module folder
+ */
 
 /// `./src`
 pub fn get_src_path(module_path: &Path) -> PathBuf {
@@ -124,10 +166,6 @@ pub fn get_asset_object_path(asset_path: &Path) -> PathBuf {
     path_buf
 }
 
-/*
- * get the path of file
- */
-
 /// `./output/name.anci`
 pub fn get_application_image_file_path(output_path: &Path, module_name: &str) -> PathBuf {
     let mut path_buf = PathBuf::from(output_path);
@@ -142,23 +180,6 @@ pub fn get_shared_module_file_path(hash_path: &Path, module_name: &str) -> PathB
     path_buf.push(module_name);
     path_buf.set_extension(FILE_EXTENSION_MODULE);
     path_buf
-}
-
-/// Replace the extension name of file to ".meta.ason", e.g.
-/// "lib.anco" -> "lib.meta.ason"
-pub fn get_mata_file_path(directory: &Path, file_name: &str) -> PathBuf {
-    let mut meta_file_path_buf = PathBuf::from(directory);
-    meta_file_path_buf.push(file_name);
-    meta_file_path_buf.set_extension(FILE_EXTENSION_META);
-    meta_file_path_buf
-}
-
-/// Replace the extension name of file to ".meta.ason", e.g.
-/// "lib.anco" -> "lib.meta.ason"
-pub fn get_mata_file_path_by_full_name(full_path: &Path) -> PathBuf {
-    let mut meta_file_path_buf = PathBuf::from(full_path);
-    meta_file_path_buf.set_extension(FILE_EXTENSION_META);
-    meta_file_path_buf
 }
 
 /// `./module.anc.ason`
@@ -190,6 +211,27 @@ pub fn get_object_file_path(object_path: &Path, canonical_name: &str) -> PathBuf
 }
 
 /*
+ * path of file
+ */
+
+/// Replace the extension name of file to ".meta.ason", e.g.
+/// "lib.anco" -> "lib.meta.ason"
+pub fn get_mata_file_path(directory: &Path, file_name: &str) -> PathBuf {
+    let mut meta_file_path_buf = PathBuf::from(directory);
+    meta_file_path_buf.push(file_name);
+    meta_file_path_buf.set_extension(FILE_EXTENSION_META);
+    meta_file_path_buf
+}
+
+/// Replace the extension name of file to ".meta.ason", e.g.
+/// "lib.anco" -> "lib.meta.ason"
+pub fn get_mata_file_path_by_full_name(full_path: &Path) -> PathBuf {
+    let mut meta_file_path_buf = PathBuf::from(full_path);
+    meta_file_path_buf.set_extension(FILE_EXTENSION_META);
+    meta_file_path_buf
+}
+
+/*
  * load or list data
  */
 
@@ -205,7 +247,7 @@ pub fn load_module_config(module_config_file_path: &Path) -> Result<ModuleConfig
     })
 }
 
-pub fn get_dependencies(
+pub fn get_dependencies_by_module_config(
     module_config: &ModuleConfig,
 ) -> (Vec<ImportModuleEntry>, Vec<ExternalLibraryEntry>) {
     let import_module_entries = module_config
@@ -343,9 +385,9 @@ pub fn list_object_files(object_file_directory: &Path) -> Result<Vec<PathBuf>, R
 }
 
 impl RuntimeProperty {
-    pub fn new(current_root: PathBuf, current_edition: String) -> Self {
+    pub fn new(current_anc_root_path: PathBuf, current_edition: String) -> Self {
         Self {
-            current_root,
+            current_anc_root_path,
             current_edition,
         }
     }
@@ -354,19 +396,24 @@ impl RuntimeProperty {
     /// - Global: `/usr/local/lib/anc/EDITION/runtime`
     /// - System: `/usr/lib/anc/EDITION/runtime`
     pub fn get_runtime_directory(&self) -> PathBuf {
-        let mut path_buf = PathBuf::from(&self.current_root);
+        let mut path_buf = PathBuf::from(&self.current_anc_root_path);
         path_buf.push(&self.current_edition);
         path_buf.push(DIRECTORY_NAME_RUNTIME);
         path_buf
     }
 
+    /// Default:
     /// - User: `~/.local/lib/anc/EDITION/runtime/modules`
     /// - Global: `/usr/local/lib/anc/EDITION/runtime/modules`
     /// - System: `/usr/lib/anc/EDITION/runtime/modules`
     pub fn get_builtin_modules_directory(&self) -> PathBuf {
-        let mut path_buf = self.get_runtime_directory();
-        path_buf.push(DIRECTORY_NAME_MODULES);
-        path_buf
+        // let mut path_buf = self.get_runtime_directory();
+        // path_buf.push(DIRECTORY_NAME_MODULES);
+        // path_buf
+
+        // get the path of runtime executable
+        // todo
+        todo!()
     }
 
     /// - User: `~/.local/lib/anc/EDITION/runtime/libraries`
@@ -382,7 +429,7 @@ impl RuntimeProperty {
     /// - Global: `/usr/local/lib/anc/EDITION/modules`
     /// - System: `/usr/lib/anc/EDITION/modules`
     pub fn get_modules_directory(&self) -> PathBuf {
-        let mut path_buf = PathBuf::from(&self.current_root);
+        let mut path_buf = PathBuf::from(&self.current_anc_root_path);
         path_buf.push(&self.current_edition);
         path_buf.push(DIRECTORY_NAME_MODULES);
         path_buf
@@ -392,7 +439,7 @@ impl RuntimeProperty {
     /// - Global: `/usr/local/lib/anc/EDITION/libraries`
     /// - System: `/usr/lib/anc/EDITION/libraries`
     pub fn get_libraries_directory(&self) -> PathBuf {
-        let mut path_buf = PathBuf::from(&self.current_root);
+        let mut path_buf = PathBuf::from(&self.current_anc_root_path);
         path_buf.push(&self.current_edition);
         path_buf.push(DIRECTORY_NAME_MODULES);
         path_buf

@@ -43,6 +43,8 @@ pub const DIRECTORY_NAME_ASSEMBLY: &str = "assembly";
 pub const DIRECTORY_NAME_OBJECT: &str = "object";
 pub const DIRECTORY_NAME_ASSET: &str = "asset";
 
+pub const VERSION_NAME_LOCAL_AND_REMOTE: &str = "noversion";
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum RuntimeError {
     Message(String),

@@ -58,45 +58,63 @@ pub enum PropertyValue {
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+pub struct Repository {
+    pub url: String,
+
+    /// Optional
+    /// the default value is []
+    #[serde(default)]
+    pub mirrors: Vec<String>,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct RuntimeConfig {
     /// Default: `~/.local/lib/anc/repositories`
     ///
     /// the index cache directory of a specific repository
     /// would be `{repositories_index_cache_directory}/{remote_git_repo_name_path}`
-    pub repositories_index_cache_directory: String,
+    pub index_cache_directory: String,
 
     /// Optional
     /// the default value is []
     #[serde(default)]
-    pub module_repositories: HashMap<String, String>,
+    pub module_repositories: HashMap<String, Repository>,
 
     /// Optional
     /// the default value is []
     #[serde(default)]
-    pub library_repositories: HashMap<String, String>,
+    pub library_repositories: HashMap<String, Repository>,
 }
 
 impl RuntimeConfig {
-    /// new default
-    pub fn new() -> Self {
-        let repositories_index_cache_directory = "~/.local/lib/anc/repositories".to_owned();
+    fn new() -> Self {
+        let index_cache_directory = "~/.local/lib/anc/repositories".to_owned();
 
-        let mut module_repositories = HashMap::<String, String>::new();
+        let mut module_repositories = HashMap::<String, Repository>::new();
         module_repositories.insert(
             "default".to_owned(),
-            "https://github.com/hemashushu/xiaoxuan-core-repository".to_owned(),
-        );
-        module_repositories.insert(
-            "default-mirror".to_owned(),
-            "https://gitlab.com/hemashushu/xiaoxuan-core-repository".to_owned(),
+            Repository {
+                url: "https://github.com/hemashushu/xiaoxuan-core-repository".to_owned(),
+                mirrors: vec!["https://gitlab.com/hemashushu/xiaoxuan-core-repository".to_owned()],
+            },
         );
 
-        let library_repositories = HashMap::<String, String>::new();
+        let library_repositories = HashMap::<String, Repository>::new();
 
         Self {
-            repositories_index_cache_directory,
+            index_cache_directory,
             module_repositories,
             library_repositories,
         }
+    }
+
+    pub fn load_and_merge_global_config() -> Self {
+        // todo
+        Self::new()
+    }
+
+    pub fn load_and_merge_user_config() -> Self {
+        // todo
+        Self::load_and_merge_global_config()
     }
 }
