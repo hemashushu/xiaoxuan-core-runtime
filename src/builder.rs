@@ -92,6 +92,18 @@ pub fn build_module(
         (is_module_config_changed, current_timestamp_opt)
     };
 
+    struct SourceBuildPendingItem {
+        // the path of source file (*.anc, *.ancr, and *.anca)
+        source_path_buf: PathBuf,
+        meta_file_path: PathBuf,
+        canonical_name: String,
+        submodule_name_path: String,
+
+        // the timestamp of source file (*.anc, *.ancr, and *.anca),
+        // it is NOT timestamp of generated file (*.ancr and *.anca in the folder "asset").
+        timestamp_opt: Option<u64>,
+    }
+
     // the building process
     //
     //      translate   compile        assemble
@@ -109,6 +121,22 @@ pub fn build_module(
 
     let mut pending_assemble_items: Vec<SourceBuildPendingItem> = vec![];
     let mut object_files: Vec<PathBuf> = vec![];
+
+    /// Used to get the relative path, canonical name, and submodule name path
+    /// of the source file.
+    ///
+    /// e.g.
+    ///
+    /// - source: "/home/yang/projects/helloworld/src/network/http/get.anca"
+    /// - prefix: "/home/yang/projects/helloworld/src"
+    /// - relative path: "network/http/get.anca"
+    /// - name path: "network/http/get"
+    /// - canonical name: "network-http-get"
+    /// - submodule name path: "network::http::get"
+    struct ScanStartItem {
+        source_path: PathBuf,
+        prefix_path: PathBuf,
+    }
 
     // check source files
     // todo
@@ -431,7 +459,10 @@ pub fn build_module_by_dependency(
 
     let image_common_entry =
         build_module_with_cache_check(&module_path, &hash_opt, false, force_check_modification)?;
-    Ok((module_path, hash_opt, image_common_entry))
+
+    let mp = module_path.canonicalize().unwrap();
+
+    Ok((mp, hash_opt, image_common_entry))
 }
 
 pub fn build_application_by_dependencies(
@@ -866,34 +897,6 @@ fn save_application_image_file(
 
     write_image_file(image_common_entry, image_index_entry, &mut file)
         .map_err(|e| RuntimeError::Message(format!("{}", e)))
-}
-
-struct SourceBuildPendingItem {
-    // the path of source file (*.anc, *.ancr, and *.anca)
-    source_path_buf: PathBuf,
-    meta_file_path: PathBuf,
-    canonical_name: String,
-    submodule_name_path: String,
-
-    // the timestamp of source file (*.anc, *.ancr, and *.anca),
-    // it is NOT timestamp of generated file (*.ancr and *.anca in the folder "asset").
-    timestamp_opt: Option<u64>,
-}
-
-/// Used to get the relative path, canonical name, and submodule name path
-/// of the source file.
-///
-/// e.g.
-///
-/// - source: "/home/yang/projects/helloworld/src/network/http/get.anca"
-/// - prefix: "/home/yang/projects/helloworld/src"
-/// - relative path: "network/http/get.anca"
-/// - name path: "network/http/get"
-/// - canonical name: "network-http-get"
-/// - submodule name path: "network::http::get"
-struct ScanStartItem {
-    source_path: PathBuf,
-    prefix_path: PathBuf,
 }
 
 #[cfg(test)]

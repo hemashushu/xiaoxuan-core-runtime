@@ -4,7 +4,7 @@
 // the Mozilla Public License version 2.0 and additional exceptions,
 // more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
 
-use std::{collections::HashMap, fs::File, path::Path, sync::Mutex};
+use std::{collections::HashMap, fs::File, io::Write, path::Path, sync::Mutex};
 
 use anc_context::{
     external_function_table::ExternalFunctionTable, process_context::ProcessContext,
@@ -31,18 +31,14 @@ use crate::{
 pub fn launch_application(
     module_path: &Path,
 
-    // entry points:
-    // - 'app_module_name::_start' for the default entry point.
+    // executable_unit_name:
+    // - "" (empty string)
+    //   executes function 'app_module_name::_start', the default entry point.
     //   internal entry point name is "_start".
-    //   public executable unit name is "" (empty string).
     //
-    // - 'app_module_name::app::{submodule_name}::_start' for the executable units.
+    // - ".{submodule_name}"
+    //   executes 'app_module_name::app::{submodule_name}::_start', the additional executable units.
     //   internal entry point name is the name of submodule.
-    //   public executable unit name is ".{submodule_name}"
-    //
-    // - 'app_module_name::tests::{submodule_name}::test_*' for unit tests.
-    //   internal entry point name is "submodule_name::test_*".
-    //   public executable unit name is matching any prefix of "submodule_name::test_*"
     executable_unit_name: &str,
 
     // program arguments
@@ -91,29 +87,100 @@ pub fn launch_application(
     execute_unit(&image_files, &entry_point_name, process_property)
 }
 
-pub fn launch_single_file_application() -> Result<u32, GenericError> {
-    todo!()
+pub fn launch_unit_tests(
+    module_path: &Path,
+    // matching any prefix of "submodule_name::test_*"
+    // executes function 'app_module_name::tests::{submodule_name}::test_*' for unit test.
+    // internal entry point name is "submodule_name::test_*".
+    unit_test_name_path_prefix: &str,
+
+    // program arguments
+    arguments: Vec<String>,
+
+    // environment variables
+    environments: HashMap<String, String>,
+
+    logger: &mut dyn Write,
+) -> Result<Vec<UnitTestResult>, GenericError> {
+    let runtime_config = RuntimeConfig::load_and_merge_user_config()?;
+    let anc_root_path = runtime_config
+        .user_anc_root_directory
+        .try_resolve()
+        .unwrap();
+
+    if !anc_root_path.exists() {
+        std::fs::create_dir_all(&anc_root_path).unwrap();
+    }
+
+    let runtime_property = RuntimeProperty::new(
+        anc_root_path.to_path_buf(),
+        RUNTIME_EDITION_STRING.to_owned(),
+    );
+
+    let (image_files, entry_point_entries) =
+        load_local_application(module_path, &runtime_property, &runtime_config)?;
+
+    let process_property = ProcessProperty {
+        application_path: module_path.to_path_buf(),
+        is_script: false,
+        arguments,
+        environments,
+    };
+
+    // unit test
+    let mut unit_test_results = vec![];
+
+    for entry_point_entry in &entry_point_entries {
+        let entry_point_name = &entry_point_entry.unit_name;
+        if entry_point_name.starts_with(unit_test_name_path_prefix) {
+            write!(logger, "testing {entry_point_name} ... ")?;
+
+            let result = execute_unit(&image_files, entry_point_name, process_property.clone())?;
+            let success = result == 0;
+
+            writeln!(logger, "{}", if success { "ok" } else { "FAILED" })?;
+
+            unit_test_results.push(UnitTestResult {
+                name: entry_point_name.to_owned(),
+                success,
+            });
+        }
+    }
+
+    Ok(unit_test_results)
 }
 
-pub fn launch_unit_tests() -> Result<Vec<(String, bool)>, GenericError> {
+#[derive(Debug, PartialEq)]
+pub struct UnitTestResult {
+    pub name: String,
+    pub success: bool,
+}
+
+impl UnitTestResult {
+    pub fn new(name: String, success: bool) -> Self {
+        Self { name, success }
+    }
+}
+
+pub fn launch_single_file_application() -> Result<u32, GenericError> {
     todo!()
 }
 
 fn execute_unit(
     image_files: &[File],
 
-    // entry points:
-    // - 'app_module_name::_start' for the default entry point.
-    //   internal entry point name is "_start".
-    //   public executable unit name is "" (empty string).
+    // entry point names:
+    // - "_start"
+    //   executes function 'app_module_name::_start', the default entry point.
+    //   public executable unit name is: "" (empty string).
     //
-    // - 'app_module_name::app::{submodule_name}::_start' for the executable units.
-    //   internal entry point name is the name of submodule.
-    //   public executable unit name is ".{submodule_name}"
+    // - "submodule_name"
+    //   executes function 'app_module_name::app::{submodule_name}::_start', the additional executable units.
+    //   public executable unit name is: ".{submodule_name}"
     //
-    // - 'app_module_name::tests::{submodule_name}::test_*' for unit tests.
-    //   internal entry point name is "submodule_name::test_*".
-    //   public executable unit name is matching any prefix of "submodule_name::test_*"
+    // - "submodule_name::test_*"
+    //   executes function 'app_module_name::tests::{submodule_name}::test_*' for unit test.
+    //   public executable unit name is: matching any prefix of "submodule_name::test_*"
     entry_point_name: &str,
     process_property: ProcessProperty,
 ) -> Result<u32, GenericError> {
@@ -215,9 +282,11 @@ impl ProcessResource for MappedFileProcessResource {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, path::PathBuf};
+    use std::{collections::HashMap, io::stdout, path::PathBuf};
 
-    use crate::runner::launch_application;
+    use pretty_assertions::assert_eq;
+
+    use crate::runner::{launch_application, launch_unit_tests, UnitTestResult};
 
     fn get_resources_path_buf() -> PathBuf {
         // returns the project's root folder
@@ -292,6 +361,55 @@ mod tests {
             );
 
             assert_eq!(result0.unwrap(), 11);
+        }
+    }
+
+    #[test]
+    fn test_launch_unit_tests() {
+        // single_module_with_unit_tests - without specify testing name
+        {
+            let mut moudle_path_buf = get_resources_path_buf();
+            moudle_path_buf.push("single_module_with_unit_tests");
+
+            let result0 = launch_unit_tests(
+                &moudle_path_buf,
+                "",
+                vec![],
+                HashMap::<String, String>::new(),
+                &mut stdout(),
+            );
+
+            assert_eq!(
+                result0.unwrap(),
+                vec![
+                    UnitTestResult::new("foo::test_two".to_owned(), true),
+                    UnitTestResult::new("foo::test_three".to_owned(), true),
+                    UnitTestResult::new("bar::test_five".to_owned(), true),
+                    UnitTestResult::new("bar::test_five_failed".to_owned(), false),
+                ]
+            )
+        }
+
+        // single_module_with_unit_tests - specify testing name
+        {
+            let mut moudle_path_buf = get_resources_path_buf();
+            moudle_path_buf.push("single_module_with_unit_tests");
+
+            let result0 = launch_unit_tests(
+                &moudle_path_buf,
+                "foo::",
+                vec![],
+                HashMap::<String, String>::new(),
+                &mut stdout(),
+            );
+
+            assert_eq!(
+                result0.unwrap(),
+                vec![
+                    UnitTestResult::new("foo::test_two".to_owned(), true),
+                    UnitTestResult::new("foo::test_three".to_owned(), true),
+                ]
+            )
         }
     }
 }

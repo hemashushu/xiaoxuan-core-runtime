@@ -33,8 +33,8 @@
 - `ancrt add -l <library_name>`
   Adds a dependent shared library to the current module.
 
-- `ancrt test [unit_test_name]`
-  Runs unit tests for the current module. The `unit_test_name` can be the name of a submodule (e.g. "client" for the namespace "tests::client", note that the name of the module does not need to be specified), or the path name of a unit test function (e.g. "client::test_get" for the function "tests::client::test_get).
+- `ancrt test [unit_test_path_name_prefix]`
+  Runs unit tests for the current module. The `unit_test_path_name_prefix` can be the name of a submodule (e.g. "client" for the namespace "tests::client"), or the partial path name of a unit test functions (e.g. "client::test_get" for functions "tests::client::test_get*").
 
 - `ancrt build [path/to/module]`
   Builds the binary image for the specified application or module. When building an application, all dependent modules and libraries will be automatically downloaded.
@@ -64,7 +64,7 @@
 - `ancrt debug <application>`
   Debug the specified application.
 
-Utilities provided by the builtin module `anwriter`, `ansh`, and `ancoreutils`.
+### Utilities provided by the builtin modules `anwriter`, `ansh` and `ancoreutils`
 
 - `ancrt edit <file>`
   Builtin code editor.
@@ -74,3 +74,8 @@ Utilities provided by the builtin module `anwriter`, `ansh`, and `ancoreutils`.
 
 - `ancrt command <command>`
   Builtin shell commands, such as mount, umount, export, ls, echo, cat, more, vi, mkdir, ln, pwd, rm, mv, cp, chown, chmod, date and exit.
+
+## Others
+
+- `ancrt [-h|--help]`
+- `ancrt --version`

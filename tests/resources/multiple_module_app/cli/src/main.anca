@@ -7,6 +7,19 @@
 import fn module::calc()->i32
 
 // returns 11
+//
+// 0x0000  00 04 00 00  04 00 00 00    call              idx:4
+// 0x0008  40 01 00 00  5c 01 00 00    imm_i32           0x0000015c
+// 0x0010  c2 02                       eq_i32
+// 0x0012  00 01                       nop
+// 0x0014  c4 03 00 00  04 00 00 00    block_alt         type:4   local:0   off:0x20
+//         00 00 00 00  20 00 00 00
+// 0x0024  40 01 00 00  0b 00 00 00    imm_i32           0x0000000b
+// 0x002c  c5 03 00 00  12 00 00 00    break_alt         off:0x12
+// 0x0034  40 01 00 00  0d 00 00 00    imm_i32           0x0000000d
+// 0x003c  c0 03                       end
+// 0x003e  c0 03                       end
+
 fn _start()->i32 {
     if -> i32
         eq_i32(call(calc), imm_i32(348))

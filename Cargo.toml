@@ -22,7 +22,8 @@ gix = { version = "0.70.0", features = [
     "blocking-network-client",
     "blocking-http-transport-reqwest-rust-tls",
 ] }
-clap = "4.5.27"
+clap = { version = "4.5.27", features = ["derive"] }
+clap_complete = "4.5.42"
 memmap2 = "0.9.5"
 resolve-path = "0.1.0"
 

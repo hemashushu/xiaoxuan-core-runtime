@@ -9,6 +9,16 @@ import fn mma_base::inc(i32)->i32
 import fn mma_base::double(i32)->i32
 import fn mma_math::muladd(i32,i32,i32)->i32
 
+// 0x0000  40 01 00 00  0b 00 00 00    imm_i32           0x0000000b
+// 0x0008  00 04 00 00  01 00 00 00    call              idx:1
+// 0x0010  40 01 00 00  0d 00 00 00    imm_i32           0x0000000d
+// 0x0018  00 04 00 00  02 00 00 00    call              idx:2
+// 0x0020  40 01 00 00  11 00 00 00    imm_i32           0x00000011
+// 0x0028  00 04 00 00  03 00 00 00    call              idx:3
+// 0x0030  40 01 00 00  13 00 00 00    imm_i32           0x00000013
+// 0x0038  00 04 00 00  00 00 00 00    call              idx:0
+// 0x0040  c0 03                       end
+
 pub fn calc()->i32 {
     call(add
         call(muladd
