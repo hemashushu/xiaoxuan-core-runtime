@@ -26,16 +26,16 @@ impl RemoteLocation {
 
 /// Download a module from the specified remote Git repository.
 pub fn download_module(
-    remote_location: &RemoteLocation,
-    output_directory: &Path,
+    _remote_location: &RemoteLocation,
+    _output_directory: &Path,
 ) -> Result<(), RuntimeError> {
     todo!()
 }
 
 pub fn get_shared_module_remote_location(
-    runtime_config: &RuntimeConfig,
-    module_name: &str,
-    module_version: &EffectiveVersion,
+    _runtime_config: &RuntimeConfig,
+    _module_name: &str,
+    _module_version: &EffectiveVersion,
 ) -> Result<RemoteLocation, RuntimeError> {
     todo!()
 }

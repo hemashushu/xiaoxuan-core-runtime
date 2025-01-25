@@ -13,19 +13,18 @@ use std::{
 };
 
 use anc_image::{
-    entry::{ExternalLibraryEntry, ImportModuleEntry},
-    format_dependency_hash, DependencyHash, ZERO_DEPENDENCY_HASH,
+    entry::{DynamicLinkModuleEntry, ExternalLibraryEntry, ImportModuleEntry, ModuleLocation},
+    format_dependency_hash, DependencyHash, DEPENDENCY_HASH_ZERO,
 };
-use anc_isa::ModuleDependency;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     entry::ModuleConfig, RuntimeError, DIRECTORY_NAME_ASSEMBLY, DIRECTORY_NAME_ASSET,
-    DIRECTORY_NAME_IR, DIRECTORY_NAME_LIBRARIES, DIRECTORY_NAME_MODULES, DIRECTORY_NAME_OBJECT,
-    DIRECTORY_NAME_OUTPUT, DIRECTORY_NAME_RUNTIME, FILE_EXTENSION_ASSEMBLY, FILE_EXTENSION_IMAGE,
-    FILE_EXTENSION_IR, FILE_EXTENSION_META, FILE_EXTENSION_MODULE, FILE_EXTENSION_OBJECT,
-    MODULE_CONFIG_FILE_NAME, MODULE_DIRECTORY_NAME_APP, MODULE_DIRECTORY_NAME_SRC,
-    MODULE_DIRECTORY_NAME_TESTS, VERSION_NAME_LOCAL_AND_REMOTE,
+    DIRECTORY_NAME_IR, DIRECTORY_NAME_LIBRARIES, DIRECTORY_NAME_MODULES, DIRECTORY_NAME_NO_VERSION,
+    DIRECTORY_NAME_OBJECT, DIRECTORY_NAME_OUTPUT, DIRECTORY_NAME_RUNTIME, FILE_EXTENSION_ASSEMBLY,
+    FILE_EXTENSION_IMAGE, FILE_EXTENSION_IR, FILE_EXTENSION_META, FILE_EXTENSION_MODULE,
+    FILE_EXTENSION_OBJECT, MODULE_CONFIG_FILE_NAME, MODULE_DIRECTORY_NAME_APP,
+    MODULE_DIRECTORY_NAME_SRC, MODULE_DIRECTORY_NAME_TESTS,
 };
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -59,36 +58,45 @@ pub struct RuntimeProperty {
  * path of modules
  */
 
-pub fn get_module_path_by_dependency(
-    module_name: &str,
-    module_dependency: &ModuleDependency,
+pub fn get_module_image_file_path_by_dynamic_link_module_entry(
+    dynamic_link_module_entry: &DynamicLinkModuleEntry,
     runtime_property: &RuntimeProperty,
 ) -> PathBuf {
-    match module_dependency {
-        ModuleDependency::Local(dependency_local) => {
-            let path_buf = PathBuf::from(&dependency_local.path);
-            path_buf
+    let module_name = &dynamic_link_module_entry.name;
+    let module_location = dynamic_link_module_entry.module_location.as_ref();
+
+    match module_location {
+        ModuleLocation::Local(location_local) => {
+            let mut path_buf = PathBuf::from(&location_local.path);
+            path_buf.push(DIRECTORY_NAME_OUTPUT);
+            path_buf.push(&location_local.hash);
+            get_shared_module_file_path(&path_buf, module_name)
         }
-        ModuleDependency::Remote(_) => {
-            // check existance
+        ModuleLocation::Remote(location_remote) => {
             let mut path_buf = runtime_property.get_modules_directory();
             path_buf.push(module_name);
-            path_buf.push(VERSION_NAME_LOCAL_AND_REMOTE);
-            path_buf
+            path_buf.push(DIRECTORY_NAME_NO_VERSION);
+            path_buf.push(DIRECTORY_NAME_OUTPUT);
+            path_buf.push(&location_remote.hash);
+            get_shared_module_file_path(&path_buf, module_name)
         }
-        ModuleDependency::Share(dependency_share) => {
-            // check existance
+        ModuleLocation::Share(location_share) => {
             let mut path_buf = runtime_property.get_modules_directory();
             path_buf.push(module_name);
-            path_buf.push(&dependency_share.version);
-            path_buf
+            path_buf.push(&location_share.version);
+            path_buf.push(DIRECTORY_NAME_OUTPUT);
+            path_buf.push(&location_share.hash);
+            get_shared_module_file_path(&path_buf, module_name)
         }
-        ModuleDependency::Runtime => {
+        ModuleLocation::Runtime => {
             let mut path_buf = runtime_property.get_builtin_modules_directory();
             path_buf.push(module_name);
-            path_buf
+            path_buf.push(DIRECTORY_NAME_OUTPUT);
+
+            let hash_path_buf = get_output_hash_path(&path_buf, &None);
+            get_shared_module_file_path(&hash_path_buf, module_name)
         }
-        ModuleDependency::Current => unreachable!(),
+        ModuleLocation::Embed => unreachable!(),
     }
 }
 
@@ -125,11 +133,11 @@ pub fn get_output_path(module_path: &Path) -> PathBuf {
 }
 
 /// `./output/{hash}`
-pub fn get_output_hash_path(output_path: &Path, hash_opt: Option<&DependencyHash>) -> PathBuf {
+pub fn get_output_hash_path(output_path: &Path, hash_opt: &Option<DependencyHash>) -> PathBuf {
     let hash = if let Some(hash) = hash_opt {
         hash
     } else {
-        &ZERO_DEPENDENCY_HASH
+        &DEPENDENCY_HASH_ZERO
     };
 
     let hash_string = format_dependency_hash(hash);
@@ -290,7 +298,7 @@ pub fn load_file_meta(meta_file_path: &Path) -> Result<Option<FileMeta>, Runtime
                 Err(e) => format!("{}", e),
             })
         })
-        .map(|o| Some(o))
+        .map(Some)
 }
 
 /// Some file system (e.g. FAT32) does not support timestamp.
@@ -329,7 +337,7 @@ pub fn list_assembly_files(scan_start_path: &Path) -> Result<Vec<PathWithTimesta
     let start_path_buf = PathBuf::from(scan_start_path);
     subfolders.push_back(start_path_buf);
 
-    while subfolders.len() > 0 {
+    while !subfolders.is_empty() {
         let current_path_buf = subfolders.pop_front().unwrap();
         let current_dir = std::fs::read_dir(current_path_buf)
             .map_err(|e| RuntimeError::Message(format!("{}", e)))?;
@@ -347,16 +355,14 @@ pub fn list_assembly_files(scan_start_path: &Path) -> Result<Vec<PathWithTimesta
 
             if metadata.is_dir() {
                 subfolders.push_back(path_buf);
-            } else {
-                if matches!(
-                    path_buf.extension().map(|e| e.to_str().unwrap()),
-                    Some(FILE_EXTENSION_ASSEMBLY)
-                ) {
-                    assembly_files.push(PathWithTimestamp {
-                        file_path: path_buf,
-                        timestamp,
-                    });
-                }
+            } else if matches!(
+                path_buf.extension().map(|e| e.to_str().unwrap()),
+                Some(FILE_EXTENSION_ASSEMBLY)
+            ) {
+                assembly_files.push(PathWithTimestamp {
+                    file_path: path_buf,
+                    timestamp,
+                });
             }
         }
     }
@@ -483,13 +489,12 @@ mod tests {
             .collect::<Vec<_>>();
 
         // the order of list item is variable
-        assert!(names.iter().find(|n| **n == "math.anca").is_some());
-        assert!(names.iter().find(|n| **n == "base.anca").is_some());
-        assert!(names.iter().find(|n| **n == "lib.anca").is_some());
-        assert!(names.iter().find(|n| **n == "main.anca").is_some());
+        assert!(names.iter().any(|n| *n == "math.anca"));
+        assert!(names.iter().any(|n| *n == "base.anca"));
+        assert!(names.iter().any(|n| *n == "lib.anca"));
+        assert!(names.iter().any(|n| *n == "main.anca"));
         assert!(names
             .iter()
-            .find(|n| **n == "base/primitive.anca")
-            .is_some());
+            .any(|n| *n == "base/primitive.anca"));
     }
 }

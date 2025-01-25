@@ -25,10 +25,11 @@ pub const FILE_EXTENSION_SOURCE: &str = "anc";
 pub const FILE_EXTENSION_IR: &str = "ancr";
 pub const FILE_EXTENSION_ASSEMBLY: &str = "anca";
 
-// source folders
+// module folders
 pub const MODULE_DIRECTORY_NAME_SRC: &str = "src";
 pub const MODULE_DIRECTORY_NAME_APP: &str = "app";
 pub const MODULE_DIRECTORY_NAME_TESTS: &str = "tests";
+pub const DIRECTORY_NAME_NO_VERSION: &str = "noversion";
 
 // building files
 pub const FILE_EXTENSION_OBJECT: &str = "anco";
@@ -43,7 +44,6 @@ pub const DIRECTORY_NAME_ASSEMBLY: &str = "assembly";
 pub const DIRECTORY_NAME_OBJECT: &str = "object";
 pub const DIRECTORY_NAME_ASSET: &str = "asset";
 
-pub const VERSION_NAME_LOCAL_AND_REMOTE: &str = "noversion";
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum RuntimeError {

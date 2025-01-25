@@ -23,7 +23,7 @@ use resolve_path::PathResolveExt;
 
 use crate::{
     builder::build_application_by_dependencies,
-    common::{get_module_path_by_dependency, RuntimeProperty},
+    common::{get_module_image_file_path_by_dynamic_link_module_entry, RuntimeProperty},
     entry::RuntimeConfig,
     RuntimeError,
 };
@@ -80,8 +80,8 @@ pub fn launch_application(
 
     let entry_point_name = if executable_unit_name.is_empty() {
         DEFAULT_ENTRY_FUNCTION_NAME.to_owned()
-    } else if executable_unit_name.starts_with('.') {
-        executable_unit_name[1..].to_owned()
+    } else if let Some(name) = executable_unit_name.strip_prefix('.') {
+        name.to_owned()
     } else {
         return Err(Box::new(RuntimeError::Message(
             "Incorrect entry point name.".to_owned(),
@@ -130,16 +130,16 @@ fn execute_unit(
 }
 
 // Load application image and dependent module images.
-fn load_shared_application(name: &str) {
+fn _load_shared_application(_name: &str) {
     // todo
 }
 
-fn load_builtin_application(name: &str) {
+fn _load_builtin_application(_name: &str) {
     // todo
 }
 
-fn load_remote_application(location: &str) {
-    //
+fn _load_remote_application(_location: &str) {
+    // todo
 }
 
 fn load_local_application(
@@ -156,18 +156,17 @@ fn load_local_application(
 
     let mut image_file_paths = vec![application_image_file_full_path];
 
-    for dependent_module_entry in &index_entry.dependent_module_entries[1..] {
-        let module_path = get_module_path_by_dependency(
-            &dependent_module_entry.name,
-            &dependent_module_entry.value,
+    for dynamic_link_module_entry in &index_entry.dynamic_link_module_entries[1..] {
+        let image_file_path = get_module_image_file_path_by_dynamic_link_module_entry(
+            dynamic_link_module_entry,
             runtime_property,
         );
-        image_file_paths.push(module_path);
+        image_file_paths.push(image_file_path);
     }
 
     let mut image_files = vec![];
     for path_buf in &image_file_paths {
-        let file = File::open(&path_buf).map_err(|e| RuntimeError::Message(e.to_string()))?;
+        let file = File::open(path_buf).map_err(|e| RuntimeError::Message(e.to_string()))?;
         image_files.push(file);
     }
 

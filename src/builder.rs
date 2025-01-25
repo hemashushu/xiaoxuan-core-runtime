@@ -12,14 +12,19 @@ use std::{
 
 use anc_assembler::assembler::assemble_module_node;
 use anc_image::{
-    entry::{ExternalLibraryEntry, ImageCommonEntry, ImageIndexEntry, ImportModuleEntry},
+    entry::{
+        DynamicLinkModuleEntry, ExternalLibraryEntry, ImageCommonEntry, ImageIndexEntry,
+        ImportModuleEntry, ModuleLocation, ModuleLocationLocal, ModuleLocationRemote,
+        ModuleLocationShare,
+    },
     entry_reader::read_object_file,
     entry_writer::{write_image_file, write_object_file},
+    format_dependency_hash, DependencyHash, DEPENDENCY_HASH_ZERO,
 };
 use anc_isa::{EffectiveVersion, ModuleDependency, ModuleDependencyType, VersionCompatibility};
 use anc_linker::{
-    indexer::{build_indices, sort_modules},
-    linker::link_modules,
+    dynamic_linker::{dynamic_link, sort_modules_by_dependent_deepth},
+    static_linker::static_link,
 };
 use anc_parser_asm::{parser::parse_from_str, NAME_PATH_SEPARATOR};
 use resolve_path::PathResolveExt;
@@ -35,7 +40,7 @@ use crate::{
     },
     entry::RuntimeConfig,
     fetcher::{download_module, get_shared_module_remote_location, RemoteLocation},
-    RuntimeError, MODULE_CONFIG_FILE_NAME, VERSION_NAME_LOCAL_AND_REMOTE,
+    RuntimeError, DIRECTORY_NAME_NO_VERSION, MODULE_CONFIG_FILE_NAME,
 };
 
 /// Compile the specified module and generate the module image file.
@@ -43,6 +48,7 @@ use crate::{
 /// module image is generated if all source files remain unchanged.
 pub fn build_module(
     module_path: &Path,
+    hash_opt: &Option<DependencyHash>,
     include_unit_tests: bool,
 ) -> Result<Option<ImageCommonEntry>, RuntimeError> {
     // module config
@@ -53,12 +59,12 @@ pub fn build_module(
 
     // output folders
     let output_path = get_output_path(module_path);
-    let hash_path = get_output_hash_path(&output_path, None);
+    let hash_path = get_output_hash_path(&output_path, hash_opt);
 
     // asset folders
     let asset_path = get_hash_asset_path(&hash_path);
-    let ir_path = get_asset_ir_path(&asset_path);
-    let assembly_path = get_asset_assembly_path(&asset_path);
+    let _ir_path = get_asset_ir_path(&asset_path);
+    let _assembly_path = get_asset_assembly_path(&asset_path);
     let object_path = get_asset_object_path(&asset_path);
 
     // check module configuration file.
@@ -95,11 +101,11 @@ pub fn build_module(
     //
     // the target of "pending source" file will be appended to the "pending ir",
     // as well as the target of "pending ir" file will be appended to the "pending assembly".
-    let mut pending_source_items: Vec<SourceBuildPendingItem> = vec![];
-    let mut ir_files: Vec<PathBuf> = vec![];
+    let mut _pending_source_items: Vec<SourceBuildPendingItem> = vec![];
+    let mut _ir_files: Vec<PathBuf> = vec![];
 
-    let mut pending_ir_items: Vec<SourceBuildPendingItem> = vec![];
-    let mut assembly_files: Vec<PathBuf> = vec![];
+    let mut _pending_ir_items: Vec<SourceBuildPendingItem> = vec![];
+    let mut _assembly_files: Vec<PathBuf> = vec![];
 
     let mut pending_assemble_items: Vec<SourceBuildPendingItem> = vec![];
     let mut object_files: Vec<PathBuf> = vec![];
@@ -315,6 +321,7 @@ pub fn build_module(
 /// it works like function `build_module` when "force_check_modification == true"  .
 pub fn build_module_with_cache_check(
     module_path: &Path,
+    hash_opt: &Option<DependencyHash>,
     include_unit_tests: bool,
     force_check_modification: bool,
 ) -> Result<ImageCommonEntry, RuntimeError> {
@@ -324,7 +331,7 @@ pub fn build_module_with_cache_check(
 
     // output folders
     let output_path = get_output_path(module_path);
-    let hash_path = get_output_hash_path(&output_path, None);
+    let hash_path = get_output_hash_path(&output_path, hash_opt);
 
     let shared_module_file_path = get_shared_module_file_path(&hash_path, &module_config.name);
     let is_shared_module_file_exist = shared_module_file_path.exists();
@@ -338,7 +345,7 @@ pub fn build_module_with_cache_check(
     if is_shared_module_file_exist && !force_check_modification {
         load_module(&shared_module_file_path)
     } else {
-        match build_module(module_path, include_unit_tests) {
+        match build_module(module_path, hash_opt, include_unit_tests) {
             Ok(module_opt) => match module_opt {
                 // rebuild
                 Some(module) => Ok(module),
@@ -355,32 +362,35 @@ pub fn build_module_by_dependency(
     import_module_entry: &ImportModuleEntry,
     runtime_property: &RuntimeProperty,
     runtime_config: &RuntimeConfig,
-) -> Result<(PathBuf, ImageCommonEntry), RuntimeError> {
+) -> Result<(PathBuf, Option<DependencyHash>, ImageCommonEntry), RuntimeError> {
     let ImportModuleEntry {
         name: module_name,
-        value: module_dependency,
+        module_dependency,
     } = import_module_entry;
 
-    let (module_path, force_check_modification) = match module_dependency.as_ref() {
+    let (module_path, hash_opt, force_check_modification) = match module_dependency.as_ref() {
         ModuleDependency::Local(dependency_local) => {
             let path_buf = dependency_local
                 .path
                 .try_resolve_in(parent_module_path)
                 .map_err(|e| RuntimeError::Message(format!("{}", e)))?;
-            (path_buf.to_path_buf(), true)
+
+            let hash = DEPENDENCY_HASH_ZERO; // todo:: calculate the hash
+            (path_buf.to_path_buf(), Some(hash), true)
         }
         ModuleDependency::Remote(dependency_remote) => {
             // check existance
             let mut path_buf = runtime_property.get_modules_directory();
             path_buf.push(module_name);
-            path_buf.push(VERSION_NAME_LOCAL_AND_REMOTE);
+            path_buf.push(DIRECTORY_NAME_NO_VERSION);
 
             // download
             let remote_location =
                 RemoteLocation::new(&dependency_remote.url, &dependency_remote.reversion);
             download_module(&remote_location, &path_buf)?;
 
-            (path_buf, false)
+            let hash = DEPENDENCY_HASH_ZERO; // todo:: calculate the hash
+            (path_buf, Some(hash), false)
         }
         ModuleDependency::Share(dependency_share) => {
             // check existance
@@ -397,7 +407,7 @@ pub fn build_module_by_dependency(
 
             let remote_location = match remote_location_result {
                 Ok(r) => r,
-                Err(e) /* if ... */ => {
+                Err(_e) /* if ... */ => {
                     // update module index if the cache does not exist.
                     // get remote location again
                     todo!()
@@ -408,19 +418,20 @@ pub fn build_module_by_dependency(
             // download
             download_module(&remote_location, &path_buf)?;
 
-            (path_buf, false)
+            let hash = DEPENDENCY_HASH_ZERO; // todo:: calculate the hash
+            (path_buf, Some(hash), false)
         }
         ModuleDependency::Runtime => {
             let mut path_buf = runtime_property.get_builtin_modules_directory();
             path_buf.push(module_name);
-            (path_buf, false)
+            (path_buf, None, false)
         }
-        ModuleDependency::Current => unreachable!(),
+        ModuleDependency::Module => unreachable!(),
     };
 
     let image_common_entry =
-        build_module_with_cache_check(&module_path, false, force_check_modification)?;
-    Ok((module_path, image_common_entry))
+        build_module_with_cache_check(&module_path, &hash_opt, false, force_check_modification)?;
+    Ok((module_path, hash_opt, image_common_entry))
 }
 
 pub fn build_application_by_dependencies(
@@ -429,20 +440,32 @@ pub fn build_application_by_dependencies(
     runtime_property: &RuntimeProperty,
     runtime_config: &RuntimeConfig,
 ) -> Result<(ImageCommonEntry, ImageIndexEntry, PathBuf), RuntimeError> {
+    struct LoadedItem {
+        module_dependency: ModuleDependency,
+        module_path: PathBuf,
+        hash_opt: Option<DependencyHash>,
+        image_common_entry: ImageCommonEntry,
+    }
+
+    struct PendingItem {
+        parent_module_path_buf: PathBuf,
+        import_module_entry: ImportModuleEntry,
+    }
+
     let get_module_dependency_type = |module_dependency: &ModuleDependency| match module_dependency
     {
         ModuleDependency::Local(_) => ModuleDependencyType::Local,
         ModuleDependency::Remote(_) => ModuleDependencyType::Remote,
         ModuleDependency::Share(_) => ModuleDependencyType::Share,
         ModuleDependency::Runtime => ModuleDependencyType::Runtime,
-        ModuleDependency::Current => ModuleDependencyType::Current,
+        ModuleDependency::Module => ModuleDependencyType::Module,
     };
 
-    let add_import_module_entries_to_pending =
+    let add_import_module_entries_to_pending_with_dependency_type_check =
         |current_module_name: &str,  // for generating error message
          current_module_path: &Path, // for resolve local dependent module path
          current_module_dependency_type: ModuleDependencyType,
-         pending_import_module_items: &mut VecDeque<ModuleBuildPendingItem>,
+         pending_import_module_items: &mut VecDeque<PendingItem>,
          new_import_module_entries: &[ImportModuleEntry]|
          -> Result<(), RuntimeError> {
             // check the dependency type of (new) import module entry
@@ -452,7 +475,7 @@ pub fn build_application_by_dependencies(
             // - "Share" and "Runtime" types do not allow "Remote" and "Local" type dependency.
             for new_import_module_entry in new_import_module_entries {
                 let new_import_module_dependency_type =
-                    get_module_dependency_type(&new_import_module_entry.value);
+                    get_module_dependency_type(&new_import_module_entry.module_dependency);
                 let new_import_module_name = &new_import_module_entry.name;
 
                 match current_module_dependency_type {
@@ -495,24 +518,22 @@ pub fn build_application_by_dependencies(
                             )));
                         }
                     }
-                    ModuleDependencyType::Current => unreachable!(),
+                    ModuleDependencyType::Module => unreachable!(),
                 }
             }
 
-            // check the pending list
-            //
-            // if the "import module entry" already exists in the "pending module entries":
-            // - Remove the "pending module" if the "import module" is newer.
-            // - Discard the "import module" if it is older or identical.
             for new_import_module_entry in new_import_module_entries {
                 if matches!(
-                    new_import_module_entry.value.as_ref(),
-                    ModuleDependency::Current
+                    new_import_module_entry.module_dependency.as_ref(),
+                    ModuleDependency::Module
                 ) {
                     continue;
                 }
 
-                pending_import_module_items.push_back(ModuleBuildPendingItem {
+                // it's acceptable to add all imported items to the
+                // pending list because the module is cached, so it is not
+                // actually recompiled.
+                pending_import_module_items.push_back(PendingItem {
                     parent_module_path_buf: current_module_path.to_path_buf(),
                     import_module_entry: new_import_module_entry.to_owned(),
                 });
@@ -521,18 +542,21 @@ pub fn build_application_by_dependencies(
             Ok(())
         };
 
-    let mut loaded_module_items: Vec<(ModuleDependency, ImageCommonEntry)> = vec![];
-    let mut pending_import_module_items = VecDeque::<ModuleBuildPendingItem>::new();
+    let mut loaded_module_items: Vec<LoadedItem> = vec![];
+    let mut pending_import_module_items = VecDeque::<PendingItem>::new();
+
+    let main_hash = DEPENDENCY_HASH_ZERO; // todo :: calculate the hash
 
     let main_module = build_module_with_cache_check(
         module_path,
+        &Some(main_hash),
         true,
         module_dependency_type == ModuleDependencyType::Local,
     )?;
 
     let module_name = main_module.name.clone();
 
-    add_import_module_entries_to_pending(
+    add_import_module_entries_to_pending_with_dependency_type_check(
         &module_name,
         module_path,
         module_dependency_type,
@@ -542,7 +566,7 @@ pub fn build_application_by_dependencies(
 
     while !pending_import_module_items.is_empty() {
         let module_build_pending_item = pending_import_module_items.pop_front().unwrap();
-        let (new_module_path, new_module) = build_module_by_dependency(
+        let (new_module_path, new_hash_opt, new_module_entry) = build_module_by_dependency(
             &module_build_pending_item.parent_module_path_buf,
             &module_build_pending_item.import_module_entry,
             runtime_property,
@@ -551,43 +575,46 @@ pub fn build_application_by_dependencies(
 
         let new_module_denpendency = module_build_pending_item
             .import_module_entry
-            .value
+            .module_dependency
             .as_ref()
             .to_owned();
         let new_module_dependency_type = get_module_dependency_type(&new_module_denpendency);
 
-        add_import_module_entries_to_pending(
-            &new_module.name,
+        add_import_module_entries_to_pending_with_dependency_type_check(
+            &new_module_entry.name,
             &new_module_path,
             new_module_dependency_type,
             &mut pending_import_module_items,
-            &new_module.import_module_entries,
+            &new_module_entry.import_module_entries,
         )?;
 
-        loaded_module_items.push((new_module_denpendency, new_module));
+        loaded_module_items.push(LoadedItem {
+            module_dependency: new_module_denpendency,
+            module_path: new_module_path,
+            hash_opt: new_hash_opt,
+            image_common_entry: new_module_entry,
+        });
     }
 
     // remove duplicated modules
-    let mut dedup_module_items: Vec<(ModuleDependency, ImageCommonEntry)> = vec![];
-    for (loaded_module_dependency, loaded_module_entry) in loaded_module_items {
-        let loaded_import_module_name = &loaded_module_entry.name;
+    let mut dedup_module_items: Vec<LoadedItem> = vec![];
+    for loaded_item in loaded_module_items {
+        let loaded_import_module_name = &loaded_item.image_common_entry.name;
 
-        let pos_dedup_opt = dedup_module_items
-            .iter()
-            .position(|(_, dedup_module_entry)| {
-                &dedup_module_entry.name == loaded_import_module_name
-            });
+        let pos_dedup_opt = dedup_module_items.iter().position(|dedup_item| {
+            &dedup_item.image_common_entry.name == loaded_import_module_name
+        });
 
         if let Some(pos_dedup) = pos_dedup_opt {
-            let (dedup_module_dependency, _) = &dedup_module_items[pos_dedup];
+            let dedup_item = &dedup_module_items[pos_dedup];
 
-            if dedup_module_dependency == &loaded_module_dependency {
+            if dedup_item.module_dependency == loaded_item.module_dependency {
                 // identical
                 continue;
             } else {
-                match &loaded_module_dependency {
+                match &loaded_item.module_dependency {
                     ModuleDependency::Local(_) => {
-                        if matches!(dedup_module_dependency, ModuleDependency::Local(_)) {
+                        if matches!(dedup_item.module_dependency, ModuleDependency::Local(_)) {
                             return Err(RuntimeError::Message(format!(
                                 "Dependency module \"{}\" source conflict.",
                                 loaded_import_module_name
@@ -600,7 +627,7 @@ pub fn build_application_by_dependencies(
                         }
                     }
                     ModuleDependency::Remote(_) => {
-                        if matches!(dedup_module_dependency, ModuleDependency::Remote(_)) {
+                        if matches!(dedup_item.module_dependency, ModuleDependency::Remote(_)) {
                             return Err(RuntimeError::Message(format!(
                                 "Dependency module \"{}\" source conflict.",
                                 loaded_import_module_name
@@ -613,7 +640,8 @@ pub fn build_application_by_dependencies(
                         }
                     }
                     ModuleDependency::Share(share_loaded) => {
-                        if let ModuleDependency::Share(share_dedup) = dedup_module_dependency {
+                        if let ModuleDependency::Share(share_dedup) = &dedup_item.module_dependency
+                        {
                             // compare version
                             match EffectiveVersion::from_str(&share_loaded.version)
                                 .compatible(&EffectiveVersion::from_str(&share_dedup.version))
@@ -627,8 +655,7 @@ pub fn build_application_by_dependencies(
                                     // replace:
                                     // the target item is older than the source one
                                     dedup_module_items.remove(pos_dedup);
-                                    dedup_module_items
-                                        .push((loaded_module_dependency, loaded_module_entry));
+                                    dedup_module_items.push(loaded_item);
                                 }
                                 VersionCompatibility::Conflict => {
                                     return Err(RuntimeError::Message(format!(
@@ -650,16 +677,11 @@ pub fn build_application_by_dependencies(
                             loaded_import_module_name
                         )));
                     }
-                    ModuleDependency::Current => {
-                        return Err(RuntimeError::Message(format!(
-                            "Dependency module \"{}\" has different type.",
-                            loaded_import_module_name
-                        )));
-                    }
+                    ModuleDependency::Module => unreachable!(),
                 }
             }
         } else {
-            dedup_module_items.push((loaded_module_dependency, loaded_module_entry));
+            dedup_module_items.push(loaded_item);
         }
     }
 
@@ -668,12 +690,47 @@ pub fn build_application_by_dependencies(
     // only valid modules. (there may be modules introduced by modules that
     // have been deleted)
 
-    let mut image_common_entries = vec![main_module];
-    for (_, module_entry) in dedup_module_items {
-        image_common_entries.push(module_entry);
+    let mut dynamic_link_module_entries = vec![DynamicLinkModuleEntry {
+        name: module_name.clone(),
+        module_location: Box::new(ModuleLocation::Embed),
+    }];
+
+    for dedup_module_item in &dedup_module_items {
+        let name = dedup_module_item.image_common_entry.name.clone();
+        let module_location = match get_module_dependency_type(&dedup_module_item.module_dependency)
+        {
+            ModuleDependencyType::Local => ModuleLocation::Local(Box::new(ModuleLocationLocal {
+                path: dedup_module_item.module_path.to_str().unwrap().to_owned(),
+                hash: format_dependency_hash(&dedup_module_item.hash_opt.unwrap()),
+            })),
+            ModuleDependencyType::Remote => {
+                ModuleLocation::Remote(Box::new(ModuleLocationRemote {
+                    hash: format_dependency_hash(&dedup_module_item.hash_opt.unwrap()),
+                }))
+            }
+            ModuleDependencyType::Share => ModuleLocation::Share(Box::new(ModuleLocationShare {
+                version: dedup_module_item.image_common_entry.version.to_string(),
+                hash: format_dependency_hash(&dedup_module_item.hash_opt.unwrap()),
+            })),
+            ModuleDependencyType::Runtime => ModuleLocation::Runtime,
+            ModuleDependencyType::Module => unreachable!(),
+        };
+
+        dynamic_link_module_entries.push(DynamicLinkModuleEntry {
+            name,
+            module_location: Box::new(module_location),
+        });
     }
 
-    let index_entry = index(&mut image_common_entries)?;
+    let mut image_common_entries = vec![main_module];
+    for LoadedItem {
+        image_common_entry, ..
+    } in dedup_module_items
+    {
+        image_common_entries.push(image_common_entry);
+    }
+
+    let index_entry = index(&mut image_common_entries, &dynamic_link_module_entries)?;
     let common_entry = image_common_entries.remove(0);
 
     // output folders
@@ -691,10 +748,10 @@ pub fn build_application_by_dependencies(
 }
 
 pub fn build_application_by_dependency_list(
-    module_path: &Path,
-    module_dependency_type: ModuleDependencyType,
-    runtime_property: &RuntimeProperty,
-    runtime_config: &RuntimeConfig,
+    _module_path: &Path,
+    _module_dependency_type: ModuleDependencyType,
+    _runtime_property: &RuntimeProperty,
+    _runtime_config: &RuntimeConfig,
 ) -> Result<(), RuntimeError> {
     todo!()
 }
@@ -766,7 +823,7 @@ fn link(
     target_module_version: &EffectiveVersion,
     submodule_entries: &[ImageCommonEntry],
 ) -> Result<ImageCommonEntry, RuntimeError> {
-    link_modules(
+    static_link(
         target_module_name,
         target_module_version,
         true,
@@ -789,9 +846,13 @@ fn save_shared_module_file(
 /**
  * image_common_entries: Unsorted image common entries.
  */
-fn index(image_common_entries: &mut [ImageCommonEntry]) -> Result<ImageIndexEntry, RuntimeError> {
-    let module_entries = sort_modules(image_common_entries);
-    build_indices(&image_common_entries, &module_entries)
+fn index(
+    image_common_entries: &mut [ImageCommonEntry],
+    dynamic_link_module_entries: &[DynamicLinkModuleEntry],
+) -> Result<ImageIndexEntry, RuntimeError> {
+    sort_modules_by_dependent_deepth(image_common_entries)
+        .map_err(|e| RuntimeError::Message(format!("{}", e)))?;
+    dynamic_link(image_common_entries, dynamic_link_module_entries)
         .map_err(|e| RuntimeError::Message(format!("{}", e)))
 }
 
@@ -819,11 +880,6 @@ struct SourceBuildPendingItem {
     timestamp_opt: Option<u64>,
 }
 
-struct ModuleBuildPendingItem {
-    parent_module_path_buf: PathBuf,
-    import_module_entry: ImportModuleEntry,
-}
-
 /// Used to get the relative path, canonical name, and submodule name path
 /// of the source file.
 ///
@@ -844,6 +900,7 @@ struct ScanStartItem {
 mod tests {
     use std::path::PathBuf;
 
+    use anc_image::DEPENDENCY_HASH_ZERO;
     use anc_isa::{ModuleDependencyType, RUNTIME_EDITION_STRING};
     use resolve_path::PathResolveExt;
 
@@ -866,18 +923,20 @@ mod tests {
 
     #[test]
     fn test_build_module() {
+        let hash_opt = Some(DEPENDENCY_HASH_ZERO);
+
         // single_module_app
         {
             let mut moudle_path_buf = get_resources_path_buf();
             moudle_path_buf.push("single_module_app");
 
             // load or rebuild
-            let result0 = build_module_with_cache_check(&moudle_path_buf, false, true);
+            let result0 = build_module_with_cache_check(&moudle_path_buf, &hash_opt, false, true);
             assert!(result0.is_ok());
             // todo: check entries
 
             // unchanged
-            let result1 = build_module(&moudle_path_buf, false);
+            let result1 = build_module(&moudle_path_buf, &hash_opt, false);
             assert!(matches!(result1, Ok(None)));
         }
 
@@ -887,12 +946,12 @@ mod tests {
             moudle_path_buf.push("single_module_app_with_executable_units");
 
             // load or rebuild
-            let result0 = build_module_with_cache_check(&moudle_path_buf, false, true);
+            let result0 = build_module_with_cache_check(&moudle_path_buf, &hash_opt, false, true);
             assert!(result0.is_ok());
             // todo: check entries
 
             // unchanged
-            let result1 = build_module(&moudle_path_buf, false);
+            let result1 = build_module(&moudle_path_buf, &hash_opt, false);
             assert!(matches!(result1, Ok(None)));
         }
 
@@ -902,17 +961,17 @@ mod tests {
             moudle_path_buf.push("single_module_with_unit_tests");
 
             // load or rebuild without unit tests
-            let result0 = build_module_with_cache_check(&moudle_path_buf, false, true);
+            let result0 = build_module_with_cache_check(&moudle_path_buf, &hash_opt, false, true);
             assert!(result0.is_ok());
             // todo: check entries
 
             // load or rebuild with unit tests
-            let result1 = build_module_with_cache_check(&moudle_path_buf, true, true);
+            let result1 = build_module_with_cache_check(&moudle_path_buf, &hash_opt, true, true);
             assert!(result1.is_ok());
             // todo: check unit test entries
 
             // unchanged
-            let result2 = build_module(&moudle_path_buf, true);
+            let result2 = build_module(&moudle_path_buf, &hash_opt, true);
             assert!(matches!(result2, Ok(None)));
         }
     }
