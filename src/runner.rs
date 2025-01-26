@@ -130,6 +130,17 @@ pub fn launch_unit_tests(
     // unit test
     let mut unit_test_results = vec![];
 
+    let count = entry_point_entries
+        .iter()
+        .filter(|entry_point_entry| {
+            entry_point_entry
+                .unit_name
+                .starts_with(unit_test_name_path_prefix)
+        })
+        .count();
+
+    writeln!(logger, "running {count} tests")?;
+
     for entry_point_entry in &entry_point_entries {
         let entry_point_name = &entry_point_entry.unit_name;
         if entry_point_name.starts_with(unit_test_name_path_prefix) {
@@ -137,7 +148,6 @@ pub fn launch_unit_tests(
 
             let result = execute_unit(&image_files, entry_point_name, process_property.clone())?;
             let success = result == 0;
-
             writeln!(logger, "{}", if success { "ok" } else { "FAILED" })?;
 
             unit_test_results.push(UnitTestResult {
@@ -282,7 +292,7 @@ impl ProcessResource for MappedFileProcessResource {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, io::stdout, path::PathBuf};
+    use std::{collections::HashMap, path::PathBuf};
 
     use pretty_assertions::assert_eq;
 
@@ -366,6 +376,9 @@ mod tests {
 
     #[test]
     fn test_launch_unit_tests() {
+        let mut output: Vec<u8> = vec![];
+        // let mut output = stdout();
+
         // single_module_with_unit_tests - without specify testing name
         {
             let mut moudle_path_buf = get_resources_path_buf();
@@ -376,7 +389,7 @@ mod tests {
                 "",
                 vec![],
                 HashMap::<String, String>::new(),
-                &mut stdout(),
+                &mut output,
             );
 
             assert_eq!(
@@ -400,7 +413,7 @@ mod tests {
                 "foo::",
                 vec![],
                 HashMap::<String, String>::new(),
-                &mut stdout(),
+                &mut output,
             );
 
             assert_eq!(

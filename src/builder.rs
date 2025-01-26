@@ -628,6 +628,7 @@ pub fn build_application_by_dependencies(
     }
 
     // remove duplicated modules
+
     let mut dedup_module_items: Vec<LoadedItem> = vec![];
     for loaded_item in loaded_module_items {
         let loaded_import_module_name = &loaded_item.image_common_entry.name;
@@ -716,10 +717,71 @@ pub fn build_application_by_dependencies(
         }
     }
 
-    // todo
+    // remove dangling modules (i.e., modules that are not referenced by any other module)
+
     // start traversing from the root node (i.e., the main module), and add
-    // only valid modules. (there may be modules introduced by modules that
+    // only non-dangling modules. (there may be modules introduced by modules that
     // have been deleted)
+    let mut module_with_reference_count_items: Vec<(
+        /* module name */ String,
+        /* reference count */ usize,
+    )> = vec![];
+
+    let self_reference_module = ImportModuleEntry::self_reference_entry();
+
+    let mut pending_module_entries: VecDeque<&ImageCommonEntry> = VecDeque::new();
+    pending_module_entries.push_back(&main_module);
+
+    while !pending_module_entries.is_empty() {
+        let parent_module = pending_module_entries.pop_front().unwrap();
+
+        for dependency_new in &parent_module.import_module_entries {
+            // skip the self reference item
+            if dependency_new == &self_reference_module {
+                continue;
+            }
+
+            // find the existing item
+            let index_opt = module_with_reference_count_items
+                .iter()
+                .position(|(name, _)| name == &dependency_new.name);
+
+            if let Some(index) = index_opt {
+                // inc the reference count
+                module_with_reference_count_items[index].1 += 1;
+            } else {
+                // add reference count item
+                module_with_reference_count_items.push((dependency_new.name.to_owned(), 1));
+
+                // add to queue to calculate the depth of its subnodes,
+                // i.e. subnodes of subnode.
+                pending_module_entries.push_back(
+                    &dedup_module_items
+                        .iter()
+                        .find(|item| item.image_common_entry.name == dependency_new.name)
+                        .unwrap()
+                        .image_common_entry,
+                );
+            }
+        }
+    }
+
+    let effective_names = module_with_reference_count_items
+        .iter()
+        .map(|item| &item.0)
+        .collect::<Vec<_>>();
+
+    // remove dangling modules
+    for idx in (0..dedup_module_items.len()).rev() {
+        let name = &dedup_module_items[idx].image_common_entry.name;
+        let existing = effective_names.iter().any(|item| *item == name);
+        if !existing {
+            println!("** REMOVE dangling moudle: {}", name);
+            dedup_module_items.remove(idx);
+        }
+    }
+
+    // build dynamic_link_module_entries
 
     let mut dynamic_link_module_entries = vec![DynamicLinkModuleEntry {
         name: module_name.clone(),
