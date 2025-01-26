@@ -5,7 +5,7 @@
 // more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
 
 use std::{
-    collections::VecDeque,
+    collections::{HashMap, VecDeque},
     fs::File,
     path::{Path, PathBuf},
 };
@@ -21,7 +21,10 @@ use anc_image::{
     entry_writer::{write_image_file, write_object_file},
     format_dependency_hash, DependencyHash, DEPENDENCY_HASH_ZERO,
 };
-use anc_isa::{EffectiveVersion, ModuleDependency, ModuleDependencyType, VersionCompatibility};
+use anc_isa::{
+    EffectiveVersion, ModuleDependency, ModuleDependencyType, VersionCompatibility,
+    RUNTIME_EDITION_STRING,
+};
 use anc_linker::{
     dynamic_linker::{dynamic_link, sort_modules_by_dependent_deepth},
     static_linker::static_link,
@@ -36,9 +39,10 @@ use crate::{
         get_hash_asset_path, get_mata_file_path, get_mata_file_path_by_full_name,
         get_module_config_file_path, get_object_file_path, get_output_hash_path, get_output_path,
         get_shared_module_file_path, get_src_path, get_tests_path, list_assembly_files,
-        load_file_meta, load_module_config, FileMeta, PathWithTimestamp, RuntimeProperty,
+        load_file_meta, load_module_config, pickup_config, FileMeta, PathWithTimestamp,
+        RuntimeProperty,
     },
-    entry::RuntimeConfig,
+    entry::{ModuleConfig, RuntimeConfig},
     fetcher::{download_module, get_shared_module_remote_location, RemoteLocation},
     RuntimeError, DIRECTORY_NAME_NO_VERSION, MODULE_CONFIG_FILE_NAME,
 };
@@ -264,7 +268,7 @@ pub fn build_module(
             };
 
             // assemble
-            let image_common_entry = assemble(
+            let image_common_entry = assemble_by_file(
                 &import_module_entries,
                 &external_library_entries,
                 &submodule_full_name,
@@ -471,113 +475,7 @@ pub fn build_application_by_dependencies(
     runtime_property: &RuntimeProperty,
     runtime_config: &RuntimeConfig,
 ) -> Result<(ImageCommonEntry, ImageIndexEntry, PathBuf), RuntimeError> {
-    struct LoadedItem {
-        module_dependency: ModuleDependency,
-        module_path: PathBuf,
-        hash_opt: Option<DependencyHash>,
-        image_common_entry: ImageCommonEntry,
-    }
-
-    struct PendingItem {
-        parent_module_path_buf: PathBuf,
-        import_module_entry: ImportModuleEntry,
-    }
-
-    let get_module_dependency_type = |module_dependency: &ModuleDependency| match module_dependency
-    {
-        ModuleDependency::Local(_) => ModuleDependencyType::Local,
-        ModuleDependency::Remote(_) => ModuleDependencyType::Remote,
-        ModuleDependency::Share(_) => ModuleDependencyType::Share,
-        ModuleDependency::Runtime => ModuleDependencyType::Runtime,
-        ModuleDependency::Module => ModuleDependencyType::Module,
-    };
-
-    let add_import_module_entries_to_pending_with_dependency_type_check =
-        |current_module_name: &str,  // for generating error message
-         current_module_path: &Path, // for resolve local dependent module path
-         current_module_dependency_type: ModuleDependencyType,
-         pending_import_module_items: &mut VecDeque<PendingItem>,
-         new_import_module_entries: &[ImportModuleEntry]|
-         -> Result<(), RuntimeError> {
-            // check the dependency type of (new) import module entry
-            //
-            // rules:
-            // - "Remote" type does not allow "Local" type dependency.
-            // - "Share" and "Runtime" types do not allow "Remote" and "Local" type dependency.
-            for new_import_module_entry in new_import_module_entries {
-                let new_import_module_dependency_type =
-                    get_module_dependency_type(&new_import_module_entry.module_dependency);
-                let new_import_module_name = &new_import_module_entry.name;
-
-                match current_module_dependency_type {
-                    ModuleDependencyType::Local => {
-                        // pass
-                    }
-                    ModuleDependencyType::Remote => {
-                        if new_import_module_dependency_type == ModuleDependencyType::Local {
-                            return Err(RuntimeError::Message(format!(
-                                "Remote type module \"{}\" contains a local type module \"{}\".",
-                                current_module_name, new_import_module_name
-                            )));
-                        }
-                    }
-                    ModuleDependencyType::Share => {
-                        if new_import_module_dependency_type == ModuleDependencyType::Local {
-                            return Err(RuntimeError::Message(format!(
-                                "Share type module \"{}\" contains a local type module \"{}\".",
-                                current_module_name, new_import_module_name
-                            )));
-                        } else if new_import_module_dependency_type == ModuleDependencyType::Remote
-                        {
-                            return Err(RuntimeError::Message(format!(
-                                "Share type module \"{}\" contains a remote type module \"{}\".",
-                                current_module_name, new_import_module_name
-                            )));
-                        }
-                    }
-                    ModuleDependencyType::Runtime => {
-                        if new_import_module_dependency_type == ModuleDependencyType::Local {
-                            return Err(RuntimeError::Message(format!(
-                                "Runtime type module \"{}\" contains a local type module \"{}\".",
-                                current_module_name, new_import_module_name
-                            )));
-                        } else if new_import_module_dependency_type == ModuleDependencyType::Remote
-                        {
-                            return Err(RuntimeError::Message(format!(
-                                "Runtime type module \"{}\" contains a remote type module \"{}\".",
-                                current_module_name, new_import_module_name
-                            )));
-                        }
-                    }
-                    ModuleDependencyType::Module => unreachable!(),
-                }
-            }
-
-            for new_import_module_entry in new_import_module_entries {
-                if matches!(
-                    new_import_module_entry.module_dependency.as_ref(),
-                    ModuleDependency::Module
-                ) {
-                    continue;
-                }
-
-                // it's acceptable to add all imported items to the
-                // pending list because the module is cached, so it is not
-                // actually recompiled.
-                pending_import_module_items.push_back(PendingItem {
-                    parent_module_path_buf: current_module_path.to_path_buf(),
-                    import_module_entry: new_import_module_entry.to_owned(),
-                });
-            }
-
-            Ok(())
-        };
-
-    let mut loaded_module_items: Vec<LoadedItem> = vec![];
-    let mut pending_import_module_items = VecDeque::<PendingItem>::new();
-
     let main_hash = DEPENDENCY_HASH_ZERO; // todo :: calculate the hash
-
     let main_module = build_module_with_cache_check(
         module_path,
         &Some(main_hash),
@@ -587,8 +485,363 @@ pub fn build_application_by_dependencies(
 
     let module_name = main_module.name.clone();
 
-    add_import_module_entries_to_pending_with_dependency_type_check(
+    // build all dependent modules
+    let (mut image_common_entries, mut dynamic_link_module_entries) = build_all_dependent_modules(
         &module_name,
+        module_path,
+        &main_module,
+        module_dependency_type,
+        runtime_property,
+        runtime_config,
+    )?;
+
+    // build index
+    image_common_entries.insert(0, main_module);
+    dynamic_link_module_entries.insert(
+        0,
+        DynamicLinkModuleEntry {
+            name: module_name.to_owned(),
+            module_location: Box::new(ModuleLocation::Embed),
+        },
+    );
+    let index_entry = index(&mut image_common_entries, &dynamic_link_module_entries)?;
+    let common_entry = image_common_entries.remove(0);
+
+    // save image file
+    let output_path = get_output_path(module_path);
+    let application_image_file_full_path =
+        get_application_image_file_path(&output_path, &module_name);
+
+    save_application_image_file(
+        &common_entry,
+        &index_entry,
+        &application_image_file_full_path,
+    )?;
+
+    Ok((common_entry, index_entry, application_image_file_full_path))
+}
+
+pub fn build_application_by_dependency_list(
+    _module_path: &Path,
+    _module_dependency_type: ModuleDependencyType,
+    _runtime_property: &RuntimeProperty,
+    _runtime_config: &RuntimeConfig,
+) -> Result<(), RuntimeError> {
+    todo!()
+}
+
+pub fn build_application_by_single_file(
+    script_file_path: &Path,
+    runtime_property: &RuntimeProperty,
+    runtime_config: &RuntimeConfig,
+) -> Result<(ImageCommonEntry, ImageIndexEntry, Vec<u8>), RuntimeError> {
+    let source_code = std::fs::read_to_string(script_file_path)
+        .map_err(|e| RuntimeError::Message(format!("{}", e)))?;
+
+    let module_config_from_file_opt = pickup_config(&source_code)?;
+    let module_config = if let Some(module_config_from_file) = module_config_from_file_opt {
+        module_config_from_file
+    } else {
+        let file_base_name = script_file_path.file_stem().unwrap().to_str().unwrap();
+
+        ModuleConfig {
+            name: file_base_name.to_owned(),
+            version: "1.0.0".to_owned(),
+            edition: RUNTIME_EDITION_STRING.to_owned(),
+            properties: HashMap::new(),
+            modules: HashMap::new(), // add std module
+            libraries: HashMap::new(),
+            module_repositories: HashMap::new(),
+            library_repositories: HashMap::new(),
+        }
+    };
+
+    let (import_module_entries, external_library_entries) =
+        get_dependencies_by_module_config(&module_config);
+
+    let module_path = script_file_path.parent().unwrap();
+    let module_name = module_config.name.clone();
+    let main_module = assemble(
+        &import_module_entries,
+        &external_library_entries,
+        &module_name,
+        &source_code,
+    )?;
+
+    // build all dependent modules
+    let (mut image_common_entries, mut dynamic_link_module_entries) = build_all_dependent_modules(
+        &module_name,
+        module_path,
+        &main_module,
+        ModuleDependencyType::Local,
+        runtime_property,
+        runtime_config,
+    )?;
+
+    // build index
+    image_common_entries.insert(0, main_module);
+    dynamic_link_module_entries.insert(
+        0,
+        DynamicLinkModuleEntry {
+            name: module_name.to_owned(),
+            module_location: Box::new(ModuleLocation::Embed),
+        },
+    );
+    let index_entry = index(&mut image_common_entries, &dynamic_link_module_entries)?;
+    let common_entry = image_common_entries.remove(0);
+
+    // save
+    let mut buffer: Vec<u8> = vec![];
+
+    write_image_file(&common_entry, &index_entry, &mut buffer)
+        .map_err(|e| RuntimeError::Message(format!("{}", e)))?;
+
+    Ok((common_entry, index_entry, buffer))
+}
+
+fn save_module_config_meta(
+    timestamp_opt: Option<u64>,
+    module_config_file_meta_full_path: &Path,
+) -> Result<(), RuntimeError> {
+    let file_meta = FileMeta {
+        timestamp: timestamp_opt,
+        dependencies: vec![],
+    };
+
+    let mut meta_file = File::create(module_config_file_meta_full_path)
+        .map_err(|e| RuntimeError::Message(format!("{}", e)))?;
+
+    ason::to_writer(&file_meta, &mut meta_file).map_err(|e| RuntimeError::Message(format!("{}", e)))
+}
+
+fn assemble_by_file(
+    import_module_entries: &[ImportModuleEntry],
+    external_library_entries: &[ExternalLibraryEntry],
+    submodule_full_name: &str,
+    assembly_file_path: &Path,
+) -> Result<ImageCommonEntry, RuntimeError> {
+    let source_code = std::fs::read_to_string(assembly_file_path)
+        .map_err(|e| RuntimeError::Message(format!("{}", e)))?;
+
+    assemble(
+        import_module_entries,
+        external_library_entries,
+        submodule_full_name,
+        &source_code,
+    )
+}
+
+fn assemble(
+    import_module_entries: &[ImportModuleEntry],
+    external_library_entries: &[ExternalLibraryEntry],
+    submodule_full_name: &str,
+    source_code: &str,
+) -> Result<ImageCommonEntry, RuntimeError> {
+    let module_node = parse_from_str(source_code)
+        .map_err(|e| RuntimeError::Message(e.with_source(&source_code)))?;
+
+    assemble_module_node(
+        &module_node,
+        submodule_full_name,
+        import_module_entries,
+        external_library_entries,
+    )
+    .map_err(|e| RuntimeError::Message(format!("{}", e)))
+}
+
+fn save_object_file(
+    image_common_entry: &ImageCommonEntry,
+    object_file_full_path: &Path,
+) -> Result<(), RuntimeError> {
+    let mut file =
+        File::create(object_file_full_path).map_err(|e| RuntimeError::Message(format!("{}", e)))?;
+
+    write_object_file(image_common_entry, false, &mut file)
+        .map_err(|e| RuntimeError::Message(format!("{}", e)))
+}
+
+fn save_object_meta(
+    timestamp_opt: Option<u64>,
+    object_file_meta_full_path: &Path,
+) -> Result<(), RuntimeError> {
+    let file_meta = FileMeta {
+        timestamp: timestamp_opt,
+        dependencies: vec![],
+    };
+
+    let mut meta_file = File::create(object_file_meta_full_path)
+        .map_err(|e| RuntimeError::Message(format!("{}", e)))?;
+
+    ason::to_writer(&file_meta, &mut meta_file).map_err(|e| RuntimeError::Message(format!("{}", e)))
+}
+
+fn link(
+    target_module_name: &str,
+    target_module_version: &EffectiveVersion,
+    submodule_entries: &[ImageCommonEntry],
+) -> Result<ImageCommonEntry, RuntimeError> {
+    static_link(
+        target_module_name,
+        target_module_version,
+        true,
+        submodule_entries,
+    )
+    .map_err(|e| RuntimeError::Message(format!("{}", e)))
+}
+
+fn save_shared_module_file(
+    image_common_entry: &ImageCommonEntry,
+    shared_module_file_full_path: &Path,
+) -> Result<(), RuntimeError> {
+    let mut file = File::create(shared_module_file_full_path)
+        .map_err(|e| RuntimeError::Message(format!("{}", e)))?;
+
+    write_object_file(image_common_entry, true, &mut file)
+        .map_err(|e| RuntimeError::Message(format!("{}", e)))
+}
+
+/**
+ * image_common_entries: Unsorted image common entries.
+ */
+fn index(
+    image_common_entries: &mut [ImageCommonEntry],
+    dynamic_link_module_entries: &[DynamicLinkModuleEntry],
+) -> Result<ImageIndexEntry, RuntimeError> {
+    sort_modules_by_dependent_deepth(image_common_entries)
+        .map_err(|e| RuntimeError::Message(format!("{}", e)))?;
+    dynamic_link(image_common_entries, dynamic_link_module_entries)
+        .map_err(|e| RuntimeError::Message(format!("{}", e)))
+}
+
+fn save_application_image_file(
+    image_common_entry: &ImageCommonEntry,
+    image_index_entry: &ImageIndexEntry,
+    application_image_file_full_path: &Path,
+) -> Result<(), RuntimeError> {
+    let mut file = File::create(application_image_file_full_path)
+        .map_err(|e| RuntimeError::Message(format!("{}", e)))?;
+
+    write_image_file(image_common_entry, image_index_entry, &mut file)
+        .map_err(|e| RuntimeError::Message(format!("{}", e)))
+}
+
+struct BuildLoadedItem {
+    module_dependency: ModuleDependency,
+    module_path: PathBuf,
+    hash_opt: Option<DependencyHash>,
+    image_common_entry: ImageCommonEntry,
+}
+
+struct BuildPendingItem {
+    parent_module_path_buf: PathBuf,
+    import_module_entry: ImportModuleEntry,
+}
+
+fn get_module_dependency_type(module_dependency: &ModuleDependency) -> ModuleDependencyType {
+    match module_dependency {
+        ModuleDependency::Local(_) => ModuleDependencyType::Local,
+        ModuleDependency::Remote(_) => ModuleDependencyType::Remote,
+        ModuleDependency::Share(_) => ModuleDependencyType::Share,
+        ModuleDependency::Runtime => ModuleDependencyType::Runtime,
+        ModuleDependency::Module => ModuleDependencyType::Module,
+    }
+}
+
+fn add_import_module_entries_to_build_pending(
+    current_module_name: &str,  // for generating error message
+    current_module_path: &Path, // for resolve local dependent module path
+    current_module_dependency_type: ModuleDependencyType,
+    pending_import_module_items: &mut VecDeque<BuildPendingItem>,
+    new_import_module_entries: &[ImportModuleEntry],
+) -> Result<(), RuntimeError> {
+    // check the dependency type of (new) import module entry
+    //
+    // rules:
+    // - "Remote" type does not allow "Local" type dependency.
+    // - "Share" and "Runtime" types do not allow "Remote" and "Local" type dependency.
+    for new_import_module_entry in new_import_module_entries {
+        let new_import_module_dependency_type =
+            get_module_dependency_type(&new_import_module_entry.module_dependency);
+        let new_import_module_name = &new_import_module_entry.name;
+
+        match current_module_dependency_type {
+            ModuleDependencyType::Local => {
+                // pass
+            }
+            ModuleDependencyType::Remote => {
+                if new_import_module_dependency_type == ModuleDependencyType::Local {
+                    return Err(RuntimeError::Message(format!(
+                        "Remote type module \"{}\" contains a local type module \"{}\".",
+                        current_module_name, new_import_module_name
+                    )));
+                }
+            }
+            ModuleDependencyType::Share => {
+                if new_import_module_dependency_type == ModuleDependencyType::Local {
+                    return Err(RuntimeError::Message(format!(
+                        "Share type module \"{}\" contains a local type module \"{}\".",
+                        current_module_name, new_import_module_name
+                    )));
+                } else if new_import_module_dependency_type == ModuleDependencyType::Remote {
+                    return Err(RuntimeError::Message(format!(
+                        "Share type module \"{}\" contains a remote type module \"{}\".",
+                        current_module_name, new_import_module_name
+                    )));
+                }
+            }
+            ModuleDependencyType::Runtime => {
+                if new_import_module_dependency_type == ModuleDependencyType::Local {
+                    return Err(RuntimeError::Message(format!(
+                        "Runtime type module \"{}\" contains a local type module \"{}\".",
+                        current_module_name, new_import_module_name
+                    )));
+                } else if new_import_module_dependency_type == ModuleDependencyType::Remote {
+                    return Err(RuntimeError::Message(format!(
+                        "Runtime type module \"{}\" contains a remote type module \"{}\".",
+                        current_module_name, new_import_module_name
+                    )));
+                }
+            }
+            ModuleDependencyType::Module => unreachable!(),
+        }
+    }
+
+    for new_import_module_entry in new_import_module_entries {
+        if matches!(
+            new_import_module_entry.module_dependency.as_ref(),
+            ModuleDependency::Module
+        ) {
+            continue;
+        }
+
+        // it's acceptable to add all imported items to the
+        // pending list because the module is cached, so it is not
+        // actually recompiled.
+        pending_import_module_items.push_back(BuildPendingItem {
+            parent_module_path_buf: current_module_path.to_path_buf(),
+            import_module_entry: new_import_module_entry.to_owned(),
+        });
+    }
+
+    Ok(())
+}
+
+/// If a module is referenced multiple times in the dependency tree with
+/// different parameters, there is a risk that the program may not run correctly
+/// because the application will only select one of the dependent parameters.
+fn build_all_dependent_modules(
+    module_name: &str,
+    module_path: &Path,
+    main_module: &ImageCommonEntry,
+    module_dependency_type: ModuleDependencyType,
+    runtime_property: &RuntimeProperty,
+    runtime_config: &RuntimeConfig,
+) -> Result<(Vec<ImageCommonEntry>, Vec<DynamicLinkModuleEntry>), RuntimeError> {
+    let mut loaded_module_items: Vec<BuildLoadedItem> = vec![];
+    let mut pending_import_module_items = VecDeque::<BuildPendingItem>::new();
+
+    add_import_module_entries_to_build_pending(
+        module_name,
         module_path,
         module_dependency_type,
         &mut pending_import_module_items,
@@ -611,7 +864,7 @@ pub fn build_application_by_dependencies(
             .to_owned();
         let new_module_dependency_type = get_module_dependency_type(&new_module_denpendency);
 
-        add_import_module_entries_to_pending_with_dependency_type_check(
+        add_import_module_entries_to_build_pending(
             &new_module_entry.name,
             &new_module_path,
             new_module_dependency_type,
@@ -619,7 +872,7 @@ pub fn build_application_by_dependencies(
             &new_module_entry.import_module_entries,
         )?;
 
-        loaded_module_items.push(LoadedItem {
+        loaded_module_items.push(BuildLoadedItem {
             module_dependency: new_module_denpendency,
             module_path: new_module_path,
             hash_opt: new_hash_opt,
@@ -629,7 +882,7 @@ pub fn build_application_by_dependencies(
 
     // remove duplicated modules
 
-    let mut dedup_module_items: Vec<LoadedItem> = vec![];
+    let mut dedup_module_items: Vec<BuildLoadedItem> = vec![];
     for loaded_item in loaded_module_items {
         let loaded_import_module_name = &loaded_item.image_common_entry.name;
 
@@ -647,10 +900,15 @@ pub fn build_application_by_dependencies(
                 match &loaded_item.module_dependency {
                     ModuleDependency::Local(_) => {
                         if matches!(dedup_item.module_dependency, ModuleDependency::Local(_)) {
-                            return Err(RuntimeError::Message(format!(
-                                "Dependency module \"{}\" source conflict.",
-                                loaded_import_module_name
-                            )));
+                            if dedup_item.module_path != loaded_item.module_path {
+                                return Err(RuntimeError::Message(format!(
+                                    "Dependency module \"{}\" source conflict.",
+                                    loaded_import_module_name
+                                )));
+                            } else {
+                                // identical
+                                continue;
+                            }
                         } else {
                             return Err(RuntimeError::Message(format!(
                                 "Dependency module \"{}\" has different type.",
@@ -781,12 +1039,9 @@ pub fn build_application_by_dependencies(
         }
     }
 
-    // build dynamic_link_module_entries
+    // generate dynamic_link_module_entries
 
-    let mut dynamic_link_module_entries = vec![DynamicLinkModuleEntry {
-        name: module_name.clone(),
-        module_location: Box::new(ModuleLocation::Embed),
-    }];
+    let mut dynamic_link_module_entries = vec![];
 
     for dedup_module_item in &dedup_module_items {
         let name = dedup_module_item.image_common_entry.name.clone();
@@ -815,150 +1070,16 @@ pub fn build_application_by_dependencies(
         });
     }
 
-    let mut image_common_entries = vec![main_module];
-    for LoadedItem {
+    let mut image_common_entries = vec![];
+
+    for BuildLoadedItem {
         image_common_entry, ..
     } in dedup_module_items
     {
         image_common_entries.push(image_common_entry);
     }
 
-    let index_entry = index(&mut image_common_entries, &dynamic_link_module_entries)?;
-    let common_entry = image_common_entries.remove(0);
-
-    // output folders
-    let output_path = get_output_path(module_path);
-    let application_image_file_full_path =
-        get_application_image_file_path(&output_path, &module_name);
-
-    save_application_image_file(
-        &common_entry,
-        &index_entry,
-        &application_image_file_full_path,
-    )?;
-
-    Ok((common_entry, index_entry, application_image_file_full_path))
-}
-
-pub fn build_application_by_dependency_list(
-    _module_path: &Path,
-    _module_dependency_type: ModuleDependencyType,
-    _runtime_property: &RuntimeProperty,
-    _runtime_config: &RuntimeConfig,
-) -> Result<(), RuntimeError> {
-    todo!()
-}
-
-fn save_module_config_meta(
-    timestamp_opt: Option<u64>,
-    module_config_file_meta_full_path: &Path,
-) -> Result<(), RuntimeError> {
-    let file_meta = FileMeta {
-        timestamp: timestamp_opt,
-        dependencies: vec![],
-    };
-
-    let mut meta_file = File::create(module_config_file_meta_full_path)
-        .map_err(|e| RuntimeError::Message(format!("{}", e)))?;
-
-    ason::to_writer(&file_meta, &mut meta_file).map_err(|e| RuntimeError::Message(format!("{}", e)))
-}
-
-fn assemble(
-    import_module_entries: &[ImportModuleEntry],
-    external_library_entries: &[ExternalLibraryEntry],
-    submodule_full_name: &str,
-    assembly_file_path: &Path,
-) -> Result<ImageCommonEntry, RuntimeError> {
-    let source_code = std::fs::read_to_string(assembly_file_path)
-        .map_err(|e| RuntimeError::Message(format!("{}", e)))?;
-
-    let module_node = parse_from_str(&source_code)
-        .map_err(|e| RuntimeError::Message(e.with_source(&source_code)))?;
-
-    assemble_module_node(
-        &module_node,
-        submodule_full_name,
-        import_module_entries,
-        external_library_entries,
-    )
-    .map_err(|e| RuntimeError::Message(format!("{}", e)))
-}
-
-fn save_object_file(
-    image_common_entry: &ImageCommonEntry,
-    object_file_full_path: &Path,
-) -> Result<(), RuntimeError> {
-    let mut file =
-        File::create(object_file_full_path).map_err(|e| RuntimeError::Message(format!("{}", e)))?;
-
-    write_object_file(image_common_entry, false, &mut file)
-        .map_err(|e| RuntimeError::Message(format!("{}", e)))
-}
-
-fn save_object_meta(
-    timestamp_opt: Option<u64>,
-    object_file_meta_full_path: &Path,
-) -> Result<(), RuntimeError> {
-    let file_meta = FileMeta {
-        timestamp: timestamp_opt,
-        dependencies: vec![],
-    };
-
-    let mut meta_file = File::create(object_file_meta_full_path)
-        .map_err(|e| RuntimeError::Message(format!("{}", e)))?;
-
-    ason::to_writer(&file_meta, &mut meta_file).map_err(|e| RuntimeError::Message(format!("{}", e)))
-}
-
-fn link(
-    target_module_name: &str,
-    target_module_version: &EffectiveVersion,
-    submodule_entries: &[ImageCommonEntry],
-) -> Result<ImageCommonEntry, RuntimeError> {
-    static_link(
-        target_module_name,
-        target_module_version,
-        true,
-        submodule_entries,
-    )
-    .map_err(|e| RuntimeError::Message(format!("{}", e)))
-}
-
-fn save_shared_module_file(
-    image_common_entry: &ImageCommonEntry,
-    shared_module_file_full_path: &Path,
-) -> Result<(), RuntimeError> {
-    let mut file = File::create(shared_module_file_full_path)
-        .map_err(|e| RuntimeError::Message(format!("{}", e)))?;
-
-    write_object_file(image_common_entry, true, &mut file)
-        .map_err(|e| RuntimeError::Message(format!("{}", e)))
-}
-
-/**
- * image_common_entries: Unsorted image common entries.
- */
-fn index(
-    image_common_entries: &mut [ImageCommonEntry],
-    dynamic_link_module_entries: &[DynamicLinkModuleEntry],
-) -> Result<ImageIndexEntry, RuntimeError> {
-    sort_modules_by_dependent_deepth(image_common_entries)
-        .map_err(|e| RuntimeError::Message(format!("{}", e)))?;
-    dynamic_link(image_common_entries, dynamic_link_module_entries)
-        .map_err(|e| RuntimeError::Message(format!("{}", e)))
-}
-
-fn save_application_image_file(
-    image_common_entry: &ImageCommonEntry,
-    image_index_entry: &ImageIndexEntry,
-    application_image_file_full_path: &Path,
-) -> Result<(), RuntimeError> {
-    let mut file = File::create(application_image_file_full_path)
-        .map_err(|e| RuntimeError::Message(format!("{}", e)))?;
-
-    write_image_file(image_common_entry, image_index_entry, &mut file)
-        .map_err(|e| RuntimeError::Message(format!("{}", e)))
+    Ok((image_common_entries, dynamic_link_module_entries))
 }
 
 #[cfg(test)]
@@ -975,7 +1096,7 @@ mod tests {
         entry::RuntimeConfig,
     };
 
-    use super::build_module;
+    use super::{build_application_by_single_file, build_module};
 
     fn get_resources_path_buf() -> PathBuf {
         // returns the project's root folder
@@ -1112,6 +1233,56 @@ mod tests {
             let result0 = build_application_by_dependencies(
                 &moudle_path_buf,
                 ModuleDependencyType::Local,
+                &runtime_property,
+                &runtime_config,
+            );
+
+            assert!(result0.is_ok());
+            // todo: check entries
+        }
+    }
+
+    #[test]
+    fn test_build_application_by_single_file() {
+        let runtime_config = RuntimeConfig::load_and_merge_user_config().unwrap();
+        let anc_root_path = runtime_config
+            .user_anc_root_directory
+            .try_resolve()
+            .unwrap();
+
+        if !anc_root_path.exists() {
+            std::fs::create_dir_all(&anc_root_path).unwrap();
+        }
+
+        let runtime_property = RuntimeProperty::new(
+            anc_root_path.to_path_buf(),
+            RUNTIME_EDITION_STRING.to_owned(),
+        );
+
+        // no config
+        {
+            let mut script_file_path_buf = get_resources_path_buf();
+            script_file_path_buf.push("single_file_app");
+            script_file_path_buf.push("noconf.anca");
+
+            let result0 = build_application_by_single_file(
+                &script_file_path_buf,
+                &runtime_property,
+                &runtime_config,
+            );
+
+            assert!(result0.is_ok());
+            // todo: check entries
+        }
+
+        // with config
+        {
+            let mut script_file_path_buf = get_resources_path_buf();
+            script_file_path_buf.push("single_file_app");
+            script_file_path_buf.push("withconf.anca");
+
+            let result0 = build_application_by_single_file(
+                &script_file_path_buf,
                 &runtime_property,
                 &runtime_config,
             );

@@ -8,6 +8,7 @@ use std::{
     collections::VecDeque,
     fs::File,
     io::ErrorKind,
+    iter::Peekable,
     path::{Path, PathBuf},
     time::SystemTime,
 };
@@ -19,12 +20,12 @@ use anc_image::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    entry::ModuleConfig, RuntimeError, DIRECTORY_NAME_ASSEMBLY, DIRECTORY_NAME_ASSET,
-    DIRECTORY_NAME_IR, DIRECTORY_NAME_LIBRARIES, DIRECTORY_NAME_MODULES, DIRECTORY_NAME_NO_VERSION,
-    DIRECTORY_NAME_OBJECT, DIRECTORY_NAME_OUTPUT, DIRECTORY_NAME_RUNTIME, FILE_EXTENSION_ASSEMBLY,
-    FILE_EXTENSION_IMAGE, FILE_EXTENSION_IR, FILE_EXTENSION_META, FILE_EXTENSION_MODULE,
-    FILE_EXTENSION_OBJECT, MODULE_CONFIG_FILE_NAME, MODULE_DIRECTORY_NAME_APP,
-    MODULE_DIRECTORY_NAME_SRC, MODULE_DIRECTORY_NAME_TESTS,
+    entry::ModuleConfig, peekableiter::PeekableIter, RuntimeError, DIRECTORY_NAME_ASSEMBLY,
+    DIRECTORY_NAME_ASSET, DIRECTORY_NAME_IR, DIRECTORY_NAME_LIBRARIES, DIRECTORY_NAME_MODULES,
+    DIRECTORY_NAME_NO_VERSION, DIRECTORY_NAME_OBJECT, DIRECTORY_NAME_OUTPUT,
+    DIRECTORY_NAME_RUNTIME, FILE_EXTENSION_ASSEMBLY, FILE_EXTENSION_IMAGE, FILE_EXTENSION_IR,
+    FILE_EXTENSION_META, FILE_EXTENSION_MODULE, FILE_EXTENSION_OBJECT, MODULE_CONFIG_FILE_NAME,
+    MODULE_DIRECTORY_NAME_APP, MODULE_DIRECTORY_NAME_SRC, MODULE_DIRECTORY_NAME_TESTS,
 };
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -452,6 +453,97 @@ impl RuntimeProperty {
     }
 }
 
+pub fn pickup_config(source_code: &str) -> Result<Option<ModuleConfig>, RuntimeError> {
+    // search the "/*   config! {...}   */"
+    //                ^               ^
+    //                |               |
+    //              whitespaces (' ', '\t', '\n') are allowed
+
+    let mut chars = source_code.chars();
+    let mut iter = PeekableIter::new(&mut chars, 2);
+
+    while let Some(prev_char) = iter.next() {
+        match prev_char {
+            '/' if matches!(iter.peek(0), Some('/')) => {
+                // line comment
+                iter.next(); // consume '/'
+
+                // consume to line end
+                while let Some(c) = iter.next() {
+                    if c == '\n' {
+                        break;
+                    }
+                }
+            }
+            '/' if matches!(iter.peek(0), Some('*')) => {
+                // block comment
+                iter.next(); // consume '*'
+
+                if let Some(comment_text) = pickup_block_comment(&mut iter) {
+                    let trimmed_text = comment_text.trim();
+                    if trimmed_text.starts_with("config!") {
+                        let (_, config_text) = trimmed_text.split_at("config!".len());
+                        let module_config = ason::from_str(config_text)
+                            .map_err(|e| RuntimeError::Message(e.with_source(config_text)))?;
+                        return Ok(Some(module_config));
+                    }
+                }
+            }
+            _ => {
+                // consume
+            }
+        }
+    }
+    Ok(None)
+}
+
+fn pickup_block_comment(iter: &mut PeekableIter<char>) -> Option<String> {
+    // /*? ... */?
+    //   ^       ^
+    //   |       |--> consumes to here
+    //   |--> starts from here
+
+    let mut nested = 1;
+    let mut ss = String::new();
+
+    while let Some(prev_char) = iter.next() {
+        match prev_char {
+            '/' if matches!(iter.peek(0), Some('/')) => {
+                // line comment
+                iter.next(); // consume '/'
+
+                // consume to line end
+                while let Some(c) = iter.next() {
+                    if c == '\n' {
+                        break;
+                    }
+                }
+            }
+            '/' if matches!(iter.peek(0), Some('*')) => {
+                // start nested block comment
+                iter.next(); // consume '*'
+                nested += 1;
+            }
+            '*' if matches!(iter.peek(0), Some('/')) => {
+                // end nested block comment
+                iter.next(); // consume '/'
+                nested -= 1;
+
+                if nested == 0 {
+                    return Some(ss);
+                }
+            }
+            _ => {
+                if nested == 1 {
+                    ss.push(prev_char);
+                }
+            }
+        }
+    }
+
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -493,8 +585,6 @@ mod tests {
         assert!(names.iter().any(|n| *n == "base.anca"));
         assert!(names.iter().any(|n| *n == "lib.anca"));
         assert!(names.iter().any(|n| *n == "main.anca"));
-        assert!(names
-            .iter()
-            .any(|n| *n == "base/primitive.anca"));
+        assert!(names.iter().any(|n| *n == "base/primitive.anca"));
     }
 }

@@ -5,6 +5,5 @@
 // more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
 
 fn main() {
-    println!("Hello");
-    println!("World");
+    println!("Hello World!");
 }
