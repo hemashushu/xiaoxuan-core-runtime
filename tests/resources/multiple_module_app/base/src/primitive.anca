@@ -4,6 +4,7 @@
 // the Mozilla Public License version 2.0 and additional exceptions,
 // more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
 
+// returns `left + right`
 pub fn add(left:i32, right:i32) -> i32 {
     add_i32(
         local_load_i32_s(left)
@@ -11,6 +12,7 @@ pub fn add(left:i32, right:i32) -> i32 {
     )
 }
 
+// returns `left * right`
 pub fn mul(left:i32, right:i32) -> i32 {
     mul_i32(
         local_load_i32_s(left)

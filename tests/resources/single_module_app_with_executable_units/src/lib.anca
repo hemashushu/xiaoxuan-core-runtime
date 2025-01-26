@@ -4,14 +4,17 @@
 // the Mozilla Public License version 2.0 and additional exceptions,
 // more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
 
+// returns 2
 pub fn two() -> i32 {
     imm_i32(2)
 }
 
+// returns 3
 pub fn three() -> i32 {
     imm_i32(3)
 }
 
+// returns 5
 pub fn five() -> i32 {
     imm_i32(5)
 }

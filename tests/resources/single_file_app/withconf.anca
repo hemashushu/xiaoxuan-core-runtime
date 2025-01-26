@@ -1,28 +1,43 @@
+#!/usr/bin/env anc
+
 // Copyright (c) 2025 Hemashushu <hippospark@gmail.com>, All rights reserved.
 //
 // This Source Code Form is subject to the terms of
 // the Mozilla Public License version 2.0 and additional exceptions,
 // more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
 
+/*
+config!
+{
+    name: "withconf"
+    version: "1.0.0"
+    edition: "2025"
+        modules: [
+        "mma_base": module::local({
+            path: "../multiple_module_app/base"
+        })
+        "mma_math": module::local({
+            path: "../multiple_module_app/math"
+        })
+    ]
+}
+*/
+
 import fn mma_base::primitive::add(i32,i32)->i32
 import fn mma_base::inc(i32)->i32
 import fn mma_base::double(i32)->i32
 import fn mma_math::muladd(i32,i32,i32)->i32
 
-// bytecode:
-//
-// 0x0000  40 01 00 00  0b 00 00 00    imm_i32           0x0000000b
-// 0x0008  00 04 00 00  01 00 00 00    call              idx:1
-// 0x0010  40 01 00 00  0d 00 00 00    imm_i32           0x0000000d
-// 0x0018  00 04 00 00  02 00 00 00    call              idx:2
-// 0x0020  40 01 00 00  11 00 00 00    imm_i32           0x00000011
-// 0x0028  00 04 00 00  03 00 00 00    call              idx:3
-// 0x0030  40 01 00 00  13 00 00 00    imm_i32           0x00000013
-// 0x0038  00 04 00 00  00 00 00 00    call              idx:0
-// 0x0040  c0 03                       end
+// returns 11
+fn _start()->i32 {
+    if -> i32
+        eq_i32(call(calc), imm_i32(348))
+        imm_i32(11)
+        imm_i32(13)
+}
 
 // returns 348
-pub fn calc()->i32 {
+fn calc()->i32 {
     call(add
         call(muladd
             call(inc, imm_i32(11))      // 11+1 = 12

@@ -6,7 +6,7 @@
 
 import fn module::calc()->i32
 
-// returns 11
+// bytecode:
 //
 // 0x0000  00 04 00 00  04 00 00 00    call              idx:4
 // 0x0008  40 01 00 00  5c 01 00 00    imm_i32           0x0000015c
@@ -20,6 +20,7 @@ import fn module::calc()->i32
 // 0x003c  c0 03                       end
 // 0x003e  c0 03                       end
 
+// returns 11
 fn _start()->i32 {
     if -> i32
         eq_i32(call(calc), imm_i32(348))
