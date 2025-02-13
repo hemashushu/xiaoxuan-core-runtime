@@ -6,45 +6,54 @@
 
 use std::fmt::Display;
 
-mod builder;
-mod common;
-mod creator;
-mod dumpper;
 mod entry;
 mod fetcher;
-mod runner;
+mod locations;
 mod peekableiter;
+mod source_scanner;
 
-// runtime folders
-pub const DIRECTORY_NAME_RUNTIME: &str = "runtime";
+pub mod builder;
+pub mod runner;
+
+// files in the initial/data folder
+pub const FILE_NAME_INITIAL_CONFIG: &str = "anc.ason";
+pub const FILE_NAME_USER_CONFIG: &str = "config.ason";
+
+// folders in the initial/data folder
+pub const DIRECTORY_NAME_DATA_FOLDER: &str = ".anc";
+pub const DIRECTORY_NAME_BIN: &str = "bin";
+pub const DIRECTORY_NAME_RUNTIMES: &str = "runtimes";
+pub const DIRECTORY_NAME_REGISTRIES: &str = "registries";
+pub const DIRECTORY_NAME_REPOSITORIES: &str = "repositories";
 pub const DIRECTORY_NAME_MODULES: &str = "modules";
-pub const DIRECTORY_NAME_LIBRARIES: &str = "libraries";
+pub const DIRECTORY_NAME_VERSION_REMOTE: &str = "remote";
+pub const DIRECTORY_NAME_VERSION_LOCAL: &str = "local";
 
 // source files
-pub const MODULE_CONFIG_FILE_NAME: &str = "module.anc.ason";
 pub const FILE_EXTENSION_SOURCE: &str = "anc";
 pub const FILE_EXTENSION_IR: &str = "ancr";
 pub const FILE_EXTENSION_ASSEMBLY: &str = "anca";
 
-// module folders
-pub const MODULE_DIRECTORY_NAME_SRC: &str = "src";
-pub const MODULE_DIRECTORY_NAME_APP: &str = "app";
-pub const MODULE_DIRECTORY_NAME_TESTS: &str = "tests";
-pub const DIRECTORY_NAME_NO_VERSION: &str = "noversion";
+// files in a module
+pub const FILE_NAME_MODULE_CONFIG: &str = "module.anc.ason";
 
-// building files
+// folders in a module
+pub const DIRECTORY_NAME_SRC: &str = "src";
+pub const DIRECTORY_NAME_APP: &str = "app";
+pub const DIRECTORY_NAME_TESTS: &str = "tests";
+pub const DIRECTORY_NAME_OUTPUT: &str = "output";
+
+// building asset - files
 pub const FILE_EXTENSION_OBJECT: &str = "anco";
 pub const FILE_EXTENSION_MODULE: &str = "ancm";
 pub const FILE_EXTENSION_IMAGE: &str = "anci";
 pub const FILE_EXTENSION_META: &str = "meta.ason";
 
-// building folders
-pub const DIRECTORY_NAME_OUTPUT: &str = "output";
+// building asset - folders
 pub const DIRECTORY_NAME_IR: &str = "ir";
 pub const DIRECTORY_NAME_ASSEMBLY: &str = "assembly";
 pub const DIRECTORY_NAME_OBJECT: &str = "object";
 pub const DIRECTORY_NAME_ASSET: &str = "asset";
-
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum RuntimeError {

@@ -1,3 +1,0 @@
-# System Package Contributors
-
-TODO

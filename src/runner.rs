@@ -15,19 +15,19 @@ use anc_image::{
     module_image::ModuleImage,
     ImageError,
 };
-use anc_isa::{ModuleDependencyType, RUNTIME_EDITION_STRING};
+use anc_isa::ModuleDependencyType;
 use anc_linker::DEFAULT_ENTRY_FUNCTION_NAME;
 use anc_processor::{multithread_process::start_program, GenericError};
-use gix::credentials::program::main;
 use memmap2::Mmap;
-use resolve_path::PathResolveExt;
 
 use crate::{
-    builder::{build_application_by_dependencies, build_application_by_single_file},
-    common::{get_module_image_file_path_by_dynamic_link_module_entry, RuntimeProperty},
-    entry::RuntimeConfig,
+    builder::{build_application_by_dependency_tree, build_application_by_single_file},
+    entry::RuntimeProperty,
+    locations::get_shared_module_image_file_path_by_dynamic_link_module_entry,
     RuntimeError,
 };
+
+pub const EXECUTABLE_UNIT_NAME_SEPARATOR: &str = ":";
 
 pub fn launch_application(
     module_path: &Path,
@@ -37,34 +37,23 @@ pub fn launch_application(
     //   executes function 'app_module_name::_start', the default entry point.
     //   internal entry point name is "_start".
     //
-    // - ".{submodule_name}"
+    // - ":{submodule_name}"
     //   executes 'app_module_name::app::{submodule_name}::_start', the additional executable units.
     //   internal entry point name is the name of submodule.
     executable_unit_name: &str,
-
-    // program arguments
-    arguments: Vec<String>,
-
-    // environment variables
-    environments: HashMap<String, String>,
+    arguments: Vec<String>,                // program arguments
+    environments: HashMap<String, String>, // environment variables
+    extra_registries: Vec<String>,
 ) -> Result<u32, GenericError> {
-    let runtime_config = RuntimeConfig::load_and_merge_user_config()?;
-    let anc_root_path = runtime_config
-        .user_anc_root_directory
-        .try_resolve()
-        .unwrap();
+    let runtime_property = RuntimeProperty::from_runtime_exec_file(&extra_registries)?;
 
-    if !anc_root_path.exists() {
-        std::fs::create_dir_all(&anc_root_path).unwrap();
+    let data_path = &runtime_property.data_path;
+    if !data_path.exists() {
+        std::fs::create_dir_all(data_path).unwrap();
     }
 
-    let runtime_property = RuntimeProperty::new(
-        anc_root_path.to_path_buf(),
-        RUNTIME_EDITION_STRING.to_owned(),
-    );
-
     let (image_files, _entry_point_entries) =
-        load_local_application(module_path, &runtime_property, &runtime_config)?;
+        load_application(module_path, &runtime_property, false)?;
 
     // create process
 
@@ -77,7 +66,7 @@ pub fn launch_application(
 
     let entry_point_name = if executable_unit_name.is_empty() {
         DEFAULT_ENTRY_FUNCTION_NAME.to_owned()
-    } else if let Some(name) = executable_unit_name.strip_prefix('.') {
+    } else if let Some(name) = executable_unit_name.strip_prefix(EXECUTABLE_UNIT_NAME_SEPARATOR) {
         name.to_owned()
     } else {
         return Err(Box::new(RuntimeError::Message(
@@ -90,36 +79,28 @@ pub fn launch_application(
 
 pub fn launch_unit_tests(
     module_path: &Path,
-    // matching any prefix of "submodule_name::test_*"
-    // executes function 'app_module_name::tests::{submodule_name}::test_*' for unit test.
-    // internal entry point name is "submodule_name::test_*".
+
+    // matching any function with the specified prefix path name, e.g.
+    // - "{submodule_name}::" matches functions "app_module_name::tests::{submodule_name}::test_*".
+    // - "{submodule_name}::test_abc*" matches functions "app_module_name::tests::{submodule_name}::test_abc*".
+    //
+    // note that the internal entry point name is "{submodule_name}::test_*".
     unit_test_name_path_prefix: &str,
 
-    // program arguments
-    arguments: Vec<String>,
-
-    // environment variables
-    environments: HashMap<String, String>,
-
+    arguments: Vec<String>,                // program arguments
+    environments: HashMap<String, String>, // environment variables
+    extra_registries: Vec<String>,
     logger: &mut dyn Write,
 ) -> Result<Vec<UnitTestResult>, GenericError> {
-    let runtime_config = RuntimeConfig::load_and_merge_user_config()?;
-    let anc_root_path = runtime_config
-        .user_anc_root_directory
-        .try_resolve()
-        .unwrap();
+    let runtime_property = RuntimeProperty::from_runtime_exec_file(&extra_registries)?;
 
-    if !anc_root_path.exists() {
-        std::fs::create_dir_all(&anc_root_path).unwrap();
+    let data_path = &runtime_property.data_path;
+    if !data_path.exists() {
+        std::fs::create_dir_all(data_path).unwrap();
     }
 
-    let runtime_property = RuntimeProperty::new(
-        anc_root_path.to_path_buf(),
-        RUNTIME_EDITION_STRING.to_owned(),
-    );
-
     let (image_files, entry_point_entries) =
-        load_local_application(module_path, &runtime_property, &runtime_config)?;
+        load_application(module_path, &runtime_property, true)?;
 
     let process_property = ProcessProperty {
         application_path: module_path.to_path_buf(),
@@ -175,29 +156,19 @@ impl UnitTestResult {
 
 pub fn launch_single_file_application(
     script_file_path: &Path,
-    // program arguments
-    arguments: Vec<String>,
-
-    // environment variables
-    environments: HashMap<String, String>,
+    arguments: Vec<String>,                // program arguments
+    environments: HashMap<String, String>, // environment variables
+    extra_registries: Vec<String>,
 ) -> Result<u32, GenericError> {
-    let runtime_config = RuntimeConfig::load_and_merge_user_config()?;
-    let anc_root_path = runtime_config
-        .user_anc_root_directory
-        .try_resolve()
-        .unwrap();
+    let runtime_property = RuntimeProperty::from_runtime_exec_file(&extra_registries)?;
 
-    if !anc_root_path.exists() {
-        std::fs::create_dir_all(&anc_root_path).unwrap();
+    let data_path = &runtime_property.data_path;
+    if !data_path.exists() {
+        std::fs::create_dir_all(data_path).unwrap();
     }
 
-    let runtime_property = RuntimeProperty::new(
-        anc_root_path.to_path_buf(),
-        RUNTIME_EDITION_STRING.to_owned(),
-    );
-
     let (main_image_data, image_files, _entry_point_entries) =
-        load_single_file_application(script_file_path, &runtime_property, &runtime_config)?;
+        load_single_file_application(script_file_path, &runtime_property)?;
 
     // create process
 
@@ -258,35 +229,22 @@ fn execute_script(
     start_program(&process_context, DEFAULT_ENTRY_FUNCTION_NAME, vec![])
 }
 
-// Load application image and dependent module images.
-fn _load_shared_application(_name: &str) {
-    // todo
-}
-
-fn _load_builtin_application(_name: &str) {
-    // todo
-}
-
-fn _load_remote_application(_location: &str) {
-    // todo
-}
-
-fn load_local_application(
+fn load_application(
     module_path: &Path,
     runtime_property: &RuntimeProperty,
-    runtime_config: &RuntimeConfig,
+    include_unit_tests: bool,
 ) -> Result<(Vec<File>, Vec<EntryPointEntry>), RuntimeError> {
-    let (_, index_entry, application_image_file_full_path) = build_application_by_dependencies(
+    let (_, index_entry, application_image_file_full_path) = build_application_by_dependency_tree(
         module_path,
         ModuleDependencyType::Local,
         runtime_property,
-        runtime_config,
+        include_unit_tests,
     )?;
 
     let mut image_file_paths = vec![application_image_file_full_path];
 
     for dynamic_link_module_entry in &index_entry.dynamic_link_module_entries[1..] {
-        let image_file_path = get_module_image_file_path_by_dynamic_link_module_entry(
+        let image_file_path = get_shared_module_image_file_path_by_dynamic_link_module_entry(
             dynamic_link_module_entry,
             runtime_property,
         );
@@ -310,15 +268,14 @@ fn load_local_application(
 fn load_single_file_application(
     script_file_path: &Path,
     runtime_property: &RuntimeProperty,
-    runtime_config: &RuntimeConfig,
 ) -> Result<(Vec<u8>, Vec<File>, Vec<EntryPointEntry>), RuntimeError> {
     let (_, index_entry, main_image_data) =
-        build_application_by_single_file(script_file_path, runtime_property, runtime_config)?;
+        build_application_by_single_file(script_file_path, runtime_property)?;
 
     let mut image_file_paths = vec![];
 
     for dynamic_link_module_entry in &index_entry.dynamic_link_module_entries[1..] {
-        let image_file_path = get_module_image_file_path_by_dynamic_link_module_entry(
+        let image_file_path = get_shared_module_image_file_path_by_dynamic_link_module_entry(
             dynamic_link_module_entry,
             runtime_property,
         );
@@ -429,9 +386,8 @@ mod tests {
     };
 
     fn get_resources_path_buf() -> PathBuf {
-        // returns the project's root folder
+        // `std::env::current_dir()` returns the current Rust project's root folder
         let mut pwd = std::env::current_dir().unwrap();
-        // append subfolders
         pwd.push("tests");
         pwd.push("resources");
         pwd
@@ -449,6 +405,7 @@ mod tests {
                 "",
                 vec![],
                 HashMap::<String, String>::new(),
+                vec![],
             );
 
             assert_eq!(result0.unwrap(), 11);
@@ -464,24 +421,27 @@ mod tests {
                 "",
                 vec![],
                 HashMap::<String, String>::new(),
+                vec![],
             );
 
             assert_eq!(result0.unwrap(), 2);
 
             let result1 = launch_application(
                 &moudle_path_buf,
-                ".foo",
+                ":foo",
                 vec![],
                 HashMap::<String, String>::new(),
+                vec![],
             );
 
             assert_eq!(result1.unwrap(), 3);
 
             let result2 = launch_application(
                 &moudle_path_buf,
-                ".bar",
+                ":bar",
                 vec![],
                 HashMap::<String, String>::new(),
+                vec![],
             );
 
             assert_eq!(result2.unwrap(), 5);
@@ -498,6 +458,7 @@ mod tests {
                 "",
                 vec![],
                 HashMap::<String, String>::new(),
+                vec![],
             );
 
             assert_eq!(result0.unwrap(), 11);
@@ -519,6 +480,7 @@ mod tests {
                 "",
                 vec![],
                 HashMap::<String, String>::new(),
+                vec![],
                 &mut output,
             );
 
@@ -543,6 +505,7 @@ mod tests {
                 "foo::",
                 vec![],
                 HashMap::<String, String>::new(),
+                vec![],
                 &mut output,
             );
 
@@ -562,12 +525,13 @@ mod tests {
         {
             let mut script_file_path_buf = get_resources_path_buf();
             script_file_path_buf.push("single_file_app");
-            script_file_path_buf.push("noconf.anca");
+            script_file_path_buf.push("no_conf.anca");
 
             let result0 = launch_single_file_application(
                 &script_file_path_buf,
                 vec![],
                 HashMap::<String, String>::new(),
+                vec![],
             );
 
             assert_eq!(result0.unwrap(), 13);
@@ -577,12 +541,13 @@ mod tests {
         {
             let mut script_file_path_buf = get_resources_path_buf();
             script_file_path_buf.push("single_file_app");
-            script_file_path_buf.push("withconf.anca");
+            script_file_path_buf.push("with_conf.anca");
 
             let result0 = launch_single_file_application(
                 &script_file_path_buf,
                 vec![],
                 HashMap::<String, String>::new(),
+                vec![],
             );
 
             assert_eq!(result0.unwrap(), 11);

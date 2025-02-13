@@ -4,6 +4,19 @@
 // the Mozilla Public License version 2.0 and additional exceptions,
 // more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
 
+use clap::Parser;
+
 fn main() {
-    println!("Hello World!");
+    let args = Cli::parse();
+    println!("{:?}", args);
+}
+
+/// Search for a pattern in a file and display the lines that contain it.
+#[derive(Debug, Parser)]
+struct Cli {
+    /// The pattern to look for
+    command: String,
+
+    /// The path to the file to read
+    path: std::path::PathBuf
 }

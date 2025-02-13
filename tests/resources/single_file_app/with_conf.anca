@@ -7,9 +7,9 @@
 // more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
 
 /*
-config!
+@config
 {
-    name: "withconf"
+    name: "with_conf"
     version: "1.0.0"
     edition: "2025"
         modules: [
