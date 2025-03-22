@@ -47,9 +47,9 @@ pub fn launch_application(
 ) -> Result<u32, GenericError> {
     let runtime_property = RuntimeProperty::from_runtime_exec_file(&extra_registries)?;
 
-    let data_path = &runtime_property.data_path;
-    if !data_path.exists() {
-        std::fs::create_dir_all(data_path).unwrap();
+    let runtime_home = &runtime_property.runtime_home;
+    if !runtime_home.exists() {
+        std::fs::create_dir_all(runtime_home).unwrap();
     }
 
     let (image_files, _entry_point_entries) =
@@ -94,9 +94,9 @@ pub fn launch_unit_tests(
 ) -> Result<Vec<UnitTestResult>, GenericError> {
     let runtime_property = RuntimeProperty::from_runtime_exec_file(&extra_registries)?;
 
-    let data_path = &runtime_property.data_path;
-    if !data_path.exists() {
-        std::fs::create_dir_all(data_path).unwrap();
+    let runtime_home = &runtime_property.runtime_home;
+    if !runtime_home.exists() {
+        std::fs::create_dir_all(runtime_home).unwrap();
     }
 
     let (image_files, entry_point_entries) =
@@ -162,9 +162,9 @@ pub fn launch_single_file_application(
 ) -> Result<u32, GenericError> {
     let runtime_property = RuntimeProperty::from_runtime_exec_file(&extra_registries)?;
 
-    let data_path = &runtime_property.data_path;
-    if !data_path.exists() {
-        std::fs::create_dir_all(data_path).unwrap();
+    let runtime_home = &runtime_property.runtime_home;
+    if !runtime_home.exists() {
+        std::fs::create_dir_all(runtime_home).unwrap();
     }
 
     let (main_image_data, image_files, _entry_point_entries) =

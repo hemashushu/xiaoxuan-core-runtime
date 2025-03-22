@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     RuntimeError, DIRECTORY_NAME_BIN, DIRECTORY_NAME_MODULES, DIRECTORY_NAME_REGISTRIES,
-    DIRECTORY_NAME_REPOSITORIES, DIRECTORY_NAME_RUNTIMES, FILE_NAME_INITIAL_CONFIG,
+    DIRECTORY_NAME_REPOSITORIES, DIRECTORY_NAME_RUNTIMES, FILE_NAME_DEFAULT_CONFIG,
     FILE_NAME_USER_CONFIG,
 };
 
@@ -47,11 +47,6 @@ pub struct ModuleConfig {
     /// the default value is []
     #[serde(default)]
     pub libraries: HashMap<String, ExternalLibraryDependency>,
-    // /// Extra registries
-    // /// Optional
-    // /// the default value is []
-    // #[serde(default)]
-    // pub registries: Vec<String>,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -63,14 +58,8 @@ pub enum PropertyValue {
     #[serde(rename = "number")]
     Number(i64),
 
-    #[serde(rename = "bool")]
-    Bool(bool),
-
-    #[serde(rename = "set")]
-    Set(/* default */ bool, /* includes */ Vec<String>),
-
-    #[serde(rename = "eval")]
-    Eval(String),
+    #[serde(rename = "flag")]
+    Flag(bool),
 }
 
 impl ModuleConfig {
@@ -113,19 +102,21 @@ impl ModuleConfig {
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub struct LauncherConfig {
-    #[serde(default)]
-    pub data_folder: String,
-
+pub struct DefaultConfig {
+    // the index of runtime executables
     #[serde(default)]
     pub runtime_registries: Vec<String>,
+
+    // the index of modules
+    #[serde(default)]
+    pub registries: Vec<String>,
+
+    #[serde(default)]
+    pub runtime_home: String,
 }
 
-impl LauncherConfig {
+impl DefaultConfig {
     fn new() -> Self {
-        // default: `~/.anc`
-        let data_folder = "~/.anc".to_owned();
-
         // default:
         // - "https://github.com/hemashushu/anc_runtime_registry"
         // - "https://gitlab.com/hemashushu/anc_runtime_registry"
@@ -134,9 +125,21 @@ impl LauncherConfig {
             "https://gitlab.com/hemashushu/anc_runtime_registry".to_owned(),
         ];
 
+        // default:
+        // - "https://github.com/hemashushu/anc_module_registry"
+        // - "https://gitlab.com/hemashushu/anc_module_registry"
+        let registries = vec![
+            "https://github.com/hemashushu/anc_module_registry".to_owned(),
+            "https://gitlab.com/hemashushu/anc_module_registry".to_owned(),
+        ];
+
+        // default: `~/.anc`
+        let runtime_home = "~/.anc".to_owned();
+
         Self {
-            data_folder,
             runtime_registries,
+            runtime_home,
+            registries,
         }
     }
 
@@ -155,14 +158,7 @@ pub struct RuntimeConfig {
 
 impl RuntimeConfig {
     fn new() -> Self {
-        // default:
-        // - "https://github.com/hemashushu/anc_module_registry"
-        // - "https://gitlab.com/hemashushu/anc_module_registry"
-        let registries = vec![
-            "https://github.com/hemashushu/anc_module_registry".to_owned(),
-            "https://gitlab.com/hemashushu/anc_module_registry".to_owned(),
-        ];
-
+        let registries = vec![];
         Self { registries }
     }
 
@@ -174,47 +170,62 @@ impl RuntimeConfig {
 }
 
 pub struct RuntimeProperty {
-    /// e.g. `/home/{user_name}/.anc`
-    pub data_path: PathBuf,
+    /// default `~/.anc`
+    pub runtime_home: PathBuf,
 
-    /// e.g. `{initial_path}/runtimes/2025`
-    pub current_runtime_path: PathBuf,
+    /// e.g.
+    /// - `{launcher_path}/runtimes/2025`
+    /// - `{runtime_home}/runtimes/2025`
+    pub runtime_path: PathBuf,
 
+    /// the index of modules
     pub registries: Vec<String>,
 }
 
 impl RuntimeProperty {
     pub fn from_runtime_exec_file(extra_registries: &[String]) -> Result<Self, RuntimeError> {
         // e.g.
-        // - `{initial_path}/runtimes/2025/ancrt`
-        // - `{data_path}/runtimes/2025/ancrt`
+        // - `{launcher_path}/runtimes/2025/ancrt`
+        // - `{runtime_home}/runtimes/2025/ancrt`
         let mut exec_path = std::env::current_exe().unwrap();
         exec_path.pop(); // EDITION
 
-        let current_runtime_path = exec_path.clone();
+        // the location of the current runtime execuable file
+        let runtime_path = exec_path.clone();
 
-        exec_path.pop(); // `runtimes`
-        exec_path.pop(); // `{initial_path|data_path}`
+        // find the default configuration file
+        exec_path.pop(); // now in folder `runtimes`
+        exec_path.pop(); // now in folder `{launcher_path}` or `{runtime_home}`
+        let launcher_path = exec_path.clone();
+        let default_config_path = launcher_path.join(FILE_NAME_DEFAULT_CONFIG);
 
-        let initial_path = exec_path.clone();
-        let initial_config_path = initial_path.join(FILE_NAME_INITIAL_CONFIG);
-
-        let data_path = if initial_config_path.exists() {
-            // the runtime exec file is located in the `{initial_path}` directory.
-            let initial_config = LauncherConfig::load(&initial_config_path)?;
-            let data_path_string = &initial_config.data_folder;
-            PathBuf::from(data_path_string)
-                .resolve_in(&initial_path)
-                .to_path_buf()
+        // the default config file only exists in the `{launcher_path}`
+        let (default_config, runtime_home) = if default_config_path.exists() {
+            // the runtime exec file is located in the `{launcher_path}` directory.
+            let default_config = DefaultConfig::load(&default_config_path)?;
+            let runtime_home = PathBuf::from(&default_config.runtime_home)
+                .resolve_in(&launcher_path)
+                .to_path_buf();
+            (default_config, runtime_home)
         } else {
-            // the runtime exec file is located in the `{data_path}` directory.
-            initial_path.clone()
+            // the runtime exec file is located in the `{runtime_home}` directory.
+            (DefaultConfig::new(), launcher_path.clone())
         };
 
-        let user_config_path = data_path.join(FILE_NAME_USER_CONFIG);
-        let user_config = RuntimeConfig::load(&user_config_path)?;
+        let user_config_path = runtime_home.join(FILE_NAME_USER_CONFIG);
+        let user_config =  if user_config_path.exists() {
+            RuntimeConfig::load(&user_config_path)?
+        }else {
+            RuntimeConfig::new()
+        };
 
         let mut registries = user_config.registries.clone();
+
+        for registry in &default_config.registries {
+            if !registries.iter().any(|item| item == registry) {
+                registries.push(registry.to_owned());
+            }
+        }
 
         for registry in extra_registries {
             if !registries.iter().any(|item| item == registry) {
@@ -223,57 +234,57 @@ impl RuntimeProperty {
         }
 
         let runtime_property = RuntimeProperty {
-            data_path,
-            current_runtime_path,
+            runtime_home,
+            runtime_path,
             registries,
         };
 
         Ok(runtime_property)
     }
 
-    pub fn from_custom(current_runtime_path: &Path, data_path: &Path) -> Self {
+    pub fn from_custom(runtime_path: &Path, runtime_home: &Path) -> Self {
         let registries = vec![
             "https://github.com/hemashushu/anc_module_registry".to_owned(),
             "https://gitlab.com/hemashushu/anc_module_registry".to_owned(),
         ];
 
         let runtime_property = RuntimeProperty {
-            data_path: data_path.to_path_buf(),
-            current_runtime_path: current_runtime_path.to_path_buf(),
+            runtime_home: runtime_home.to_path_buf(),
+            runtime_path: runtime_path.to_path_buf(),
             registries,
         };
 
         runtime_property
     }
 
-    // `{anc_data_path}/bin`
+    // `{runtime_home}/bin`
     pub fn get_bin_directory(&self) -> PathBuf {
-        self.data_path.join(DIRECTORY_NAME_BIN)
+        self.runtime_home.join(DIRECTORY_NAME_BIN)
     }
 
-    // `{anc_data_path}/runtimes`
+    // `{runtime_home}/runtimes`
     pub fn get_runtimes_directory(&self) -> PathBuf {
-        self.data_path.join(DIRECTORY_NAME_RUNTIMES)
+        self.runtime_home.join(DIRECTORY_NAME_RUNTIMES)
     }
 
-    // `{anc_data_path}/registries`
+    // `{runtime_home}/registries`
     pub fn get_registries_directory(&self) -> PathBuf {
-        self.data_path.join(DIRECTORY_NAME_REGISTRIES)
+        self.runtime_home.join(DIRECTORY_NAME_REGISTRIES)
     }
 
-    // `{anc_data_path}/repositories`
+    // `{runtime_home}/repositories`
     pub fn get_repositories_directory(&self) -> PathBuf {
-        self.data_path.join(DIRECTORY_NAME_REPOSITORIES)
+        self.runtime_home.join(DIRECTORY_NAME_REPOSITORIES)
     }
 
-    // `{anc_data_path}/modules`
+    // `{runtime_home}/modules`
     pub fn get_modules_directory(&self) -> PathBuf {
-        self.data_path.join(DIRECTORY_NAME_MODULES)
+        self.runtime_home.join(DIRECTORY_NAME_MODULES)
     }
 
-    // `{initial_path}/runtimes/EDITION/modules`
+    // `{launcher_path}/runtimes/EDITION/modules`
     pub fn get_builtin_modules_directory(&self) -> PathBuf {
-        self.current_runtime_path.join(DIRECTORY_NAME_MODULES)
+        self.runtime_path.join(DIRECTORY_NAME_MODULES)
     }
 }
 

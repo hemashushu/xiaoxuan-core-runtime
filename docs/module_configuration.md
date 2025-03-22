@@ -28,14 +28,14 @@ Content of file `./module.anc.ason`:
         // e.g.
         // version: "{logger_version}"
 
-        "enable_abc": prop::bool(true)                      // bool/flag
-        "enable_xyz": prop::bool(true)                      // bool/flag
-        "enable_all": prop::set(false, [                    // bool set
-            "enable_abc"
-            "enable_xyz"
-            ])
-        "enable_logger": prop::eval(                        // evaluation
-            "enable_abc && not(enable_xyz)")
+        "enable_abc": prop::flag(true)                      // flag
+        "enable_xyz": prop::flag(true)                      // flag
+        // "all": prop::set(false, [                           // flag set
+        //     "enable_abc"
+        //     "enable_xyz"
+        //     ])
+        // "enable_logger": prop::eval(                        // evaluation
+        //     "enable_abc && not(enable_xyz)")
         "logger_version": prop::string("1.0.1")             // string value
         "bits": prop::number(32)                            // number value
     ]
@@ -44,8 +44,8 @@ Content of file `./module.anc.ason`:
         "digest": module::share({
             version: "1.0"
             parameters: [                                   // pass values to module
-               "enable_sha2": param::bool(true)             // bool/flag
-               "enable_md5": param::bool(false)             // bool/flag
+               "enable_sha2": param::bool(true)             // set flag
+               "enable_md5": param::bool(false)             // set flag
                "enable_foo": param::eval("not(enable_md5)") // evaluation
                "bits": param::prop("bits")                  // inherited
                "enable_abc": param::prop("enable_abc")      // inherited

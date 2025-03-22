@@ -1,6 +1,16 @@
 [build]
 # target = "x86_64-unknown-linux-musl"
+
+# or
 # target = "x86_64-unknown-linux-gnu"
+# with flag '-C target-feature=+crt-static'
+#
+# or
+#
+# ```sh
+# cargo build --target x86_64-unknown-linux-musl
+# RUSTFLAGS='-C target-feature=+crt-static' cargo build --target x86_64-unknown-linux-gnu
+# ```
 
 # custom flags for 'rustc'
 #

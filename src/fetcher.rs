@@ -35,19 +35,19 @@ pub fn get_shared_module_remote_location(
 }
 
 /// Download a module from the specified remote Git repository
-/// and save to `{anc_data_path}/repositories` folder.
+/// and save to `{runtime_home}/repositories` folder.
 pub fn fetch_module(
     _remote_repository_url: &str,
     _repositories_directory: &Path,
-) -> Result</* the `{anc_data_path}/repositories/{hash}` directory*/ PathBuf, RuntimeError> {
+) -> Result</* the `{runtime_home}/repositories/{hash}` directory*/ PathBuf, RuntimeError> {
     todo!()
 }
 
 /// Checkout the specified revision and save to the
-/// `{anc_data_path}/modules` folder.
+/// `{runtime_home}/modules` folder.
 pub fn checkout_module(
     _repository_path: &Path,
     _revision: &str,
-) -> Result</* the `{anc_data_path}/modules/{name}` directory */ PathBuf, RuntimeError> {
+) -> Result</* the `{runtime_home}/modules/{name}` directory */ PathBuf, RuntimeError> {
     todo!()
 }

@@ -1,13 +1,15 @@
 # ANC Folder Hierarchy
 
-## Overview
+Anc consists of two folder, `launcher_path` and `runtime_home`.
 
-`anc_initial_path`, can be any path, it is determined by the anc and ancrt, in general it is `~/.anc` or `/usr/lib/anc`.
+## The `launcher_path`
+
+`launcher_path`, can be any path, it is determined by the anc and ancrt, in general it is `~/.anc` or `/usr/lib/anc`.
 
 ```text
-anc_initial_path
+launcher_path
   |
-  |-- anc.ason          # initial configuration file
+  |-- default.ason      # initial configuration file
   |
   |-- bin
   |   |-- anc           # launcher
@@ -22,15 +24,17 @@ anc_initial_path
   |
 ```
 
-`anc_data_path`, can be configurated by `anc.ason`, it is also can be the same as `anc_initial_path`.
+## The `runtime_home`
+
+It can be configurated by `default.ason`, it is also can be the same as `launcher_path`.
 
 ```text
-anc_data_path
+runtime_home
   |
-  |-- config.ason       # runtime configuration file
+  |-- config.ason       # user configuration file
   |
   |-- bin
-  |   |-- hello         # script file for launcher specific ANC application
+  |   |-- hello         # script file for launch specific ANC application
   |   |-- ...
   |
   |-- runtimes          # new-added and updated runtimes
@@ -42,16 +46,16 @@ anc_data_path
   |       |-- ...
   |
   |-- registries
-  |   |-- hash1         # module index, a Git repo, e.g. github.com/anc_registry/index
-  |   |-- hash2         # another module index, a Git repo, e.g. gitlab.com/anc_registry/index
+  |   |-- hash1         # module index, the content is a git repo
+  |   |-- hash2         # module index, the content is a git repo
   |   |-- ...
   |
   |-- repositories
-  |   |-- hash1         # module repository comes from registry index, a Git repo, e.g. https://github.com/username/module_name
-  |   |-- hash2         # module repository comes from remote URL, a Git repo, e.g. https://host.domain/username/module_name
+  |   |-- hash1         # module repository comes from registry, the content is a git repo
+  |   |-- hash2         # module repository comes from remote URL, the content is a git repo
   |   |-- ...
   |
-  |-- modules           # checkout the specific revision from the repository in the "repositories" folder and copy to this folder.
+  |-- modules           # checkout the specific revision from the local repository (in the "repositories" folder) and copy to this folder.
       |-- name1
       |-- name2
       |-- ...
@@ -60,7 +64,7 @@ anc_data_path
 ## General Modules Example
 
 ```text
-anc_data_path
+runtime_home
   |
   |-- modules
   |   |-- name
@@ -87,7 +91,7 @@ anc_data_path
 ## Builtin Modules Example
 
 ```text
-anc_data_path
+runtime_home
   |-- runtimes
   |   |-- 2025
   |   |   |-- modules
@@ -102,11 +106,11 @@ anc_data_path
   |   |   |           |-- lib.anc
 ```
 
-<!-- TODO
+<!--
 ## General Libraries Example
 
 ```text
-ancc_data_path
+ancc_runtime_home
   |
   |-- modules
   |   |-- zlib
@@ -130,11 +134,11 @@ ancc_data_path
 ```
 -->
 
-<!-- TODO
+<!--
 ## Builtin Libraries Example
 
 ```text
-anc_data_path
+runtime_home
   |-- runtimes
   |   |-- 2025
   |   |   |-- libraries
@@ -147,24 +151,22 @@ anc_data_path
 ```
 -->
 
-## ANC home folder details
-
-### Runtime isolation
+## Runtime isolation
 
 The user, global, and system runtimes are independent of each other, for example, a shared module installed globally is not available to the user's application.
 
 In particular, system-wide runtimes, modules, and applications are managed by the system's package manager, and users (either normal or privileged) cannot create, install, update, or remove system-wide runtimes, modules, and applications through the XiaoXuan Core runtime or launcher.
 
-### Configuration files
+## Configuration files
 
-- initial configuration: `{anc_initial_path}/anc.ason`
-- user configuration: `{anc_data_path}/config.ason`
+- default configuration: `{launcher_path}/anc.ason`
+- user configuration: `{runtime_home}/config.ason`
 
 TODO
 
-### Installed application quick launching scripts
+## Installed application quick launching scripts
 
-{anc_data_path}/bin/{app_name}
+`{launcher_path}/bin/{app_name}`
 
 The content of script file:
 

@@ -17,8 +17,8 @@ MODULE_FOLDER
   |   |-- cmd2.anca         # sub-executable unit
   |
   |-- tests                 # unit test directory
-  |   |-- test1.anca        # testing unit
-  |   |-- test2.anca        # testing unit
+  |   |-- test_name1.anca   # testing unit
+  |   |-- test_name2.anca   # testing unit
   |   |-- subfolder
   |       |-- bar.anca      # submodule for unit testing only
   |

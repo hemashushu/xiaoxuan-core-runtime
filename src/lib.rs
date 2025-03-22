@@ -15,11 +15,11 @@ mod source_scanner;
 pub mod builder;
 pub mod runner;
 
-// files in the initial/data folder
-pub const FILE_NAME_INITIAL_CONFIG: &str = "anc.ason";
+// files in the launcher_path/runtime_home folder
+pub const FILE_NAME_DEFAULT_CONFIG: &str = "default.ason";
 pub const FILE_NAME_USER_CONFIG: &str = "config.ason";
 
-// folders in the initial/data folder
+// folders in the launcher_path/runtime_home folder
 pub const DIRECTORY_NAME_DATA_FOLDER: &str = ".anc";
 pub const DIRECTORY_NAME_BIN: &str = "bin";
 pub const DIRECTORY_NAME_RUNTIMES: &str = "runtimes";

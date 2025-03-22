@@ -1289,10 +1289,10 @@ mod tests {
     }
 
     fn get_runtime_property() -> RuntimeProperty {
-        let data_path_relative = PathBuf::from("~/.anc");
-        let data_path = data_path_relative.try_resolve().unwrap();
-        if !data_path.exists() {
-            std::fs::create_dir_all(&data_path).unwrap();
+        let runtime_home_relative = PathBuf::from("~/.anc");
+        let runtime_home = runtime_home_relative.try_resolve().unwrap();
+        if !runtime_home.exists() {
+            std::fs::create_dir_all(&runtime_home).unwrap();
         }
 
         let current_runtime_path_relative = PathBuf::from("~/.anc/runtimes/2025");
@@ -1300,7 +1300,7 @@ mod tests {
 
         RuntimeProperty::from_custom(
             &current_runtime_path.to_path_buf(),
-            &data_path.to_path_buf(),
+            &runtime_home.to_path_buf(),
         )
     }
 

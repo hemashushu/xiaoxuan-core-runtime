@@ -16,6 +16,8 @@ MODULE_FOLDER
   |-- tests
   |-- output
       |-- name.anci                     # application binary image
+      |-- name.ancm                     # sealed shared module binary image
+      |
       |-- hash0
       |   |-- name.ancm                 # shared module binary image
       |   |-- asset
