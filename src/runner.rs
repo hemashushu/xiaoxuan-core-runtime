@@ -82,6 +82,8 @@ pub fn launch_application(
 /// - internal entry point name: "{submodule_name}::test_*"
 ///   executes function: '{app_module_name}::tests::{submodule_name}::test_*' (unit tests)
 ///   user CLI unit name: name path prefix, e.g. "{submodule_name}", "{submodule_name}::test_get_"
+///
+/// Returns `(Vec<UnitTestResult>, filter_out_names: Vec<String>)`
 pub fn launch_unit_tests(
     module_path: &Path,
     unit_test_name_path_prefix: &str,
@@ -89,7 +91,7 @@ pub fn launch_unit_tests(
     environments: HashMap<String, String>, // environment variables
     // extra_registries: Vec<String>,
     logger: &mut dyn Write,
-) -> Result<Vec<UnitTestResult>, GenericError> {
+) -> Result<(Vec<UnitTestResult>, Vec<String>), GenericError> {
     let runtime_property = RuntimeProperty::from_runtime_exec_file()?;
 
     let runtime_home = &runtime_property.runtime_home;
@@ -108,43 +110,41 @@ pub fn launch_unit_tests(
     };
 
     // unit test
+    let mut entry_point_names = vec![];
+
     let mut unit_test_results = vec![];
-
-    let count = entry_point_entries
-        .iter()
-        .filter(|entry_point_entry| {
-            entry_point_entry
-                .unit_name
-                .contains(NAME_PATH_SEPARATOR) &&
-            entry_point_entry
-                .unit_name
-                .starts_with(unit_test_name_path_prefix)
-        })
-        .count();
-
-    writeln!(logger, "Running {count} test(s)")?;
+    let mut filter_out_names: Vec<String> = vec![];
 
     for entry_point_entry in &entry_point_entries {
         let entry_point_name = &entry_point_entry.unit_name;
-        if entry_point_name.starts_with(unit_test_name_path_prefix) {
-            writeln!(logger, "Running {entry_point_name}")?;
-
-            let result = execute_unit(&image_files, entry_point_name, process_property.clone())?;
-            let success = result == 0;
-            writeln!(
-                logger,
-                "Unit \"{entry_point_name}\": {}",
-                if success { "ok" } else { "FAILED" }
-            )?;
-
-            unit_test_results.push(UnitTestResult {
-                name: entry_point_name.to_owned(),
-                success,
-            });
+        if entry_point_name.contains(NAME_PATH_SEPARATOR) {
+            if entry_point_name.starts_with(unit_test_name_path_prefix) {
+                entry_point_names.push(entry_point_name);
+            } else {
+                filter_out_names.push(entry_point_name.to_owned());
+            }
         }
     }
 
-    Ok(unit_test_results)
+    writeln!(logger).unwrap();
+    writeln!(logger, "Running {} unit test(s)", entry_point_names.len())?;
+
+    for entry_point_name in entry_point_names {
+        let result = execute_unit(&image_files, entry_point_name, process_property.clone())?;
+        let success = result == 0;
+        writeln!(
+            logger,
+            "Test \"{entry_point_name}\": {}",
+            if success { "ok" } else { "FAILED" }
+        )?;
+
+        unit_test_results.push(UnitTestResult {
+            name: entry_point_name.to_owned(),
+            success,
+        });
+    }
+
+    Ok((unit_test_results, filter_out_names))
 }
 
 #[derive(Debug, PartialEq)]
@@ -486,23 +486,26 @@ mod tests {
             let mut moudle_path_buf = get_resources_path_buf();
             moudle_path_buf.push("single_module_with_unit_tests");
 
-            let result0 = launch_unit_tests(
+            let (results, skips) = launch_unit_tests(
                 &moudle_path_buf,
                 "",
                 vec![],
                 HashMap::<String, String>::new(),
                 &mut output,
-            );
+            )
+            .unwrap();
 
             assert_eq!(
-                result0.unwrap(),
+                results,
                 vec![
                     UnitTestResult::new("foo::test_add".to_owned(), true),
                     UnitTestResult::new("foo::test_subtract".to_owned(), true),
                     UnitTestResult::new("bar::test_multiply".to_owned(), true),
                     UnitTestResult::new("bar::test_divide".to_owned(), true),
                 ]
-            )
+            );
+
+            assert!(skips.is_empty());
         }
 
         // single_module_with_unit_tests - specify testing name
@@ -510,21 +513,30 @@ mod tests {
             let mut moudle_path_buf = get_resources_path_buf();
             moudle_path_buf.push("single_module_with_unit_tests");
 
-            let result0 = launch_unit_tests(
+            let (results, skips) = launch_unit_tests(
                 &moudle_path_buf,
                 "foo",
                 vec![],
                 HashMap::<String, String>::new(),
                 &mut output,
-            );
+            )
+            .unwrap();
 
             assert_eq!(
-                result0.unwrap(),
+                results,
                 vec![
                     UnitTestResult::new("foo::test_add".to_owned(), true),
                     UnitTestResult::new("foo::test_subtract".to_owned(), true),
                 ]
-            )
+            );
+
+            assert_eq!(
+                skips,
+                vec![
+                    "bar::test_multiply".to_owned(),
+                    "bar::test_divide".to_owned()
+                ]
+            );
         }
     }
 

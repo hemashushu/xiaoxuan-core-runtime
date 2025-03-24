@@ -180,6 +180,29 @@ pub fn build_module(
         prefix_path: PathBuf,
     }
 
+    // add scanning directories
+    let mut scan_start_items: Vec<ScanStartItem> = vec![];
+
+    let src_path = get_module_folder_src_path(module_path);
+    scan_start_items.push(ScanStartItem {
+        source_path: src_path.clone(),
+        prefix_path: src_path.clone(),
+    });
+
+    let app_path = get_module_folder_app_path(module_path);
+    scan_start_items.push(ScanStartItem {
+        source_path: app_path,
+        prefix_path: module_path.to_path_buf(),
+    });
+
+    if include_unit_tests {
+        let tests_path = get_module_folder_tests_path(module_path);
+        scan_start_items.push(ScanStartItem {
+            source_path: tests_path,
+            prefix_path: module_path.to_path_buf(),
+        });
+    }
+
     // process the source files
     // todo
 
@@ -188,31 +211,8 @@ pub fn build_module(
 
     // process the assembly files
     let has_reassembled = {
-        // add scanning directories
-        let mut assembly_scan_start_items: Vec<ScanStartItem> = vec![];
-
-        let src_path = get_module_folder_src_path(module_path);
-        assembly_scan_start_items.push(ScanStartItem {
-            source_path: src_path.clone(),
-            prefix_path: src_path.clone(),
-        });
-
-        let app_path = get_module_folder_app_path(module_path);
-        assembly_scan_start_items.push(ScanStartItem {
-            source_path: app_path,
-            prefix_path: module_path.to_path_buf(),
-        });
-
-        if include_unit_tests {
-            let tests_path = get_module_folder_tests_path(module_path);
-            assembly_scan_start_items.push(ScanStartItem {
-                source_path: tests_path,
-                prefix_path: module_path.to_path_buf(),
-            });
-        }
-
         // scan assembly files
-        for assembly_scan_start_item in assembly_scan_start_items {
+        for assembly_scan_start_item in scan_start_items {
             let source_file_path_and_timestamps =
                 list_assembly_files(&assembly_scan_start_item.source_path)?;
 

@@ -4,11 +4,17 @@
 // the Mozilla Public License version 2.0 and additional exceptions,
 // more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
 
-use std::{io::Write, path::PathBuf};
+use std::{collections::HashMap, io::Write, path::PathBuf};
 
 use anc_isa::ModuleDependencyType;
 use anc_runtime::{
-    builder::build_application_by_dependency_tree, entry::RuntimeProperty, RuntimeError,
+    builder::build_application_by_dependency_tree,
+    entry::RuntimeProperty,
+    runner::{
+        launch_application, launch_single_file_application, launch_unit_tests,
+        EXECUTABLE_UNIT_NAME_SEPARATOR,
+    },
+    RuntimeError,
 };
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::{generate, generate_to, Shell};
@@ -17,6 +23,9 @@ use clap_complete::{generate, generate_to, Shell};
 enum Commands {
     /// Run an application
     Run {
+        #[arg(short, long)]
+        unit_name: Option<String>,
+
         /// Path to application
         application_path: Option<String>,
 
@@ -68,15 +77,15 @@ enum Commands {
         /// Path to module
         module_path: Option<PathBuf>,
     },
-    /// Wrap an application as an executable file
-    Wrap {
-        /// Remove the source code
-        #[arg(short, long)]
-        strip: bool,
-
-        /// Path to module
-        module_path: Option<PathBuf>,
-    },
+    //     /// Wrap an application as an executable file
+    //     Wrap {
+    //         /// Remove the source code
+    //         #[arg(short, long)]
+    //         strip: bool,
+    //
+    //         /// Path to module
+    //         module_path: Option<PathBuf>,
+    //     },
     /// Display or disassemble the object file
     Dump {
         /// List all sections
@@ -230,18 +239,120 @@ fn process_cmd() -> Result<(), RuntimeError> {
 
     match cli.command {
         Commands::Run {
+            unit_name,
             application_path,
             args,
-        } => todo!(),
+        } => {
+            let (module_path_string, inline_unit_name) = if let Some(path) = application_path {
+                if let Some((module_path_string, inline_unit_name)) =
+                    path.split_once(EXECUTABLE_UNIT_NAME_SEPARATOR)
+                {
+                    (
+                        if module_path_string.is_empty() {
+                            ".".to_owned()
+                        } else {
+                            module_path_string.to_owned()
+                        },
+                        inline_unit_name.to_owned(),
+                    )
+                } else {
+                    (path, String::new())
+                }
+            } else {
+                (".".to_owned(), String::new())
+            };
+
+            let actual_unit_name = if let Some(param_unit_name) = unit_name {
+                param_unit_name
+            } else {
+                inline_unit_name
+            };
+
+            let module_path = PathBuf::from(module_path_string);
+            let full_path = module_path.canonicalize().unwrap();
+
+            let exit_code = if full_path.is_file() {
+                if !actual_unit_name.is_empty() {
+                    return Err(RuntimeError::Message(
+                        "Single-file application does not support specify the executable unit name."
+                            .to_owned(),
+                    ));
+                }
+
+                launch_single_file_application(
+                    &full_path,
+                    args,
+                    HashMap::<String, String>::new(),
+                    &mut std::io::stderr(),
+                )
+                .map_err(|err| RuntimeError::Message(format!("{}", err)))?
+            } else {
+                launch_application(
+                    &full_path,
+                    &actual_unit_name,
+                    args,
+                    HashMap::<String, String>::new(),
+                    &mut std::io::stderr(),
+                )
+                .map_err(|err| RuntimeError::Message(format!("{}", err)))?
+            };
+
+            std::process::exit(exit_code as i32);
+        }
         Commands::New {
-            type_,
-            module_name,
-            location,
+            type_: _,
+            module_name: _,
+            location: _,
         } => todo!(),
         Commands::Test {
             path_name_prefix,
             module_path,
-        } => todo!(),
+        } => {
+            let path = if let Some(path) = module_path {
+                path
+            } else {
+                PathBuf::from(".")
+            };
+
+            let full_path = path.canonicalize().unwrap();
+
+            if full_path.is_file() {
+                return Err(RuntimeError::Message(
+                    "Single-file application does not support unit test.".to_owned(),
+                ));
+            }
+
+            let prefix = if let Some(prefix) = path_name_prefix {
+                prefix
+            } else {
+                String::new()
+            };
+
+            let mut stdout = std::io::stdout();
+
+            let (unit_test_results, filter_out_names) = launch_unit_tests(
+                &full_path,
+                &prefix,
+                vec![],
+                HashMap::<String, String>::new(),
+                &mut stdout,
+            )
+            .map_err(|err| RuntimeError::Message(format!("{}", err)))?;
+
+            let pass_count = unit_test_results.iter().filter(|item| item.success).count();
+
+            writeln!(stdout).unwrap();
+            writeln!(
+                stdout,
+                "Test result: {} passed, {} failed, {} filtered out.",
+                pass_count,
+                unit_test_results.len() - pass_count,
+                filter_out_names.len()
+            )
+            .unwrap();
+
+            Ok(())
+        }
         Commands::Build { module_path, tests } => {
             let path = if let Some(path) = module_path {
                 path
@@ -253,7 +364,6 @@ fn process_cmd() -> Result<(), RuntimeError> {
             let runtime_property = RuntimeProperty::from_runtime_exec_file()?;
 
             if full_path.is_file() {
-                // build_application_by_single_file(&full_path, &runtime_property)?;
                 Err(RuntimeError::Message(
                     "Single-file application do not need to be built, use the `anc run` command to run it directly.".to_owned()))
             } else {
@@ -267,21 +377,26 @@ fn process_cmd() -> Result<(), RuntimeError> {
                 Ok(())
             }
         }
-        Commands::Clean { module_path } => todo!(),
-        Commands::Package { strip, module_path } => todo!(),
-        Commands::Wrap { strip, module_path } => todo!(),
-        Commands::Dump {
-            list,
-            section,
-            function,
-            data,
-            object_file,
+        Commands::Clean { module_path: _ } => todo!(),
+        Commands::Package {
+            strip: _,
+            module_path: _,
         } => todo!(),
-        Commands::Env { name } => todo!(),
-        Commands::Debug { application_path } => todo!(),
-        Commands::Edit { file } => todo!(),
-        Commands::Shell { command_line } => todo!(),
-        Commands::Command { command_line } => todo!(),
+        // Commands::Wrap { strip, module_path } => todo!(),
+        Commands::Dump {
+            list: _,
+            section: _,
+            function: _,
+            data: _,
+            object_file: _,
+        } => todo!(),
+        Commands::Env { name: _ } => todo!(),
+        Commands::Debug {
+            application_path: _,
+        } => todo!(),
+        Commands::Edit { file: _ } => todo!(),
+        Commands::Shell { command_line: _ } => todo!(),
+        Commands::Command { command_line: _ } => todo!(),
         Commands::Me(me_command) => match me_command {
             MeCommand::Manpage { out_dir } => {
                 let cmd = Cli::command();

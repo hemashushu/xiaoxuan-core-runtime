@@ -11,7 +11,7 @@ The launcher is user-scope runtimes manager and applications manager.
   - Installs an application from central registry, a local project folder, single source file, packaged module file, or remote Git URL.
   - Creates a shell script for quick launching.
 
-- `anc run [--registry <URLs>] <application_name>`
+- `anc run [--registry <URLs>] [--unit unit_name] <application_name>`
   TODO
 
 - `anc list`
@@ -43,7 +43,7 @@ The launcher is user-scope runtimes manager and applications manager.
 
 - `anc registry remove <URL>`
 
-- `anc registry top <URL>`
+- `anc registry select <URL>`
 
 ## Runtime Management
 
@@ -64,14 +64,12 @@ The launcher is user-scope runtimes manager and applications manager.
 - `anc me update`
   Updates the `anc` program itself.
 
-- `ancrt [-h|--help]`
-- `ancrt --version`
-
-- `anc me manpage`
+- `anc me manpage [out_dir]`
   Generates man pages.
 
-- `anc me completion`
+- `anc me completion [--shell shell] [out_dir]`
   Generates shell completion script.
+  `--shell` TODO:: bash, zsh, fish, nushell, powershell
 
 ## Runtime Command Redirecting
 

@@ -12,6 +12,9 @@
 - `ancrt run </path/to/application:unit_name> [args]...`
   Runs the specified executable unit of an application.
 
+- `ancrt run --unit unit_name </path/to/application> [args]...`
+  Runs the specified executable unit of an application.
+
 - `ancrt run [:unit_name] [args]...`
   Runs the application if the current directory is the root directory of a project.
 
@@ -52,8 +55,10 @@
   TODO:: Build and seal the module with default parameters.
   TODO:: `--strip`  remove source files
 
+<!--
 - `ancrt wrap [--strip] [/path/to/application]`
   TODO:: Staticly link all dependencies except the build-in modules (the packaged application file can be executed directly by set the `execute` file bit on Linux, but it requires the `anc` is installed and set the binfmt_misc with `anc` )
+-->
 
 ## Binutils
 
