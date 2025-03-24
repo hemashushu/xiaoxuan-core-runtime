@@ -1,0 +1,5 @@
+{
+    name: "single_module_with_multiple_executable_units"
+    version: "1.0.0"
+    edition: "2025"
+}

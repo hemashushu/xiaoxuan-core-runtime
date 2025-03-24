@@ -183,7 +183,7 @@ pub struct RuntimeProperty {
 }
 
 impl RuntimeProperty {
-    pub fn from_runtime_exec_file(extra_registries: &[String]) -> Result<Self, RuntimeError> {
+    pub fn from_runtime_exec_file(/* extra_registries: &[String] */) -> Result<Self, RuntimeError> {
         // e.g.
         // - `{launcher_path}/runtimes/2025/ancrt`
         // - `{runtime_home}/runtimes/2025/ancrt`
@@ -227,11 +227,11 @@ impl RuntimeProperty {
             }
         }
 
-        for registry in extra_registries {
-            if !registries.iter().any(|item| item == registry) {
-                registries.push(registry.to_owned());
-            }
-        }
+        // for registry in extra_registries {
+        //     if !registries.iter().any(|item| item == registry) {
+        //         registries.push(registry.to_owned());
+        //     }
+        // }
 
         let runtime_property = RuntimeProperty {
             runtime_home,

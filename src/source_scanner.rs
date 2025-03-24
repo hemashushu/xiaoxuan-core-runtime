@@ -151,7 +151,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         // the order of list item is variable
-        assert!(names.iter().any(|n| *n == "math.anca"));
+        assert!(names.iter().any(|n| *n == "medium.anca"));
         assert!(names.iter().any(|n| *n == "base.anca"));
         assert!(names.iter().any(|n| *n == "lib.anca"));
         assert!(names.iter().any(|n| *n == "main.anca"));

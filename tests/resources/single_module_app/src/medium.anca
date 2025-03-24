@@ -1,0 +1,26 @@
+// Copyright (c) 2025 Hemashushu <hippospark@gmail.com>, All rights reserved.
+//
+// This Source Code Form is subject to the terms of
+// the Mozilla Public License version 2.0 and additional exceptions,
+// more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
+
+import fn module::base::multiply(i32,i32)->i32
+
+// returns `n * n`
+pub fn square(n:i32) -> i32 {
+    call(multiply
+        local_load_i32_s(n)
+        local_load_i32_s(n)
+    )
+}
+
+// returns `sqrt(n)`
+pub fn square_root(n:i32) -> i32 {
+    convert_f32_to_i32_s(
+        sqrt_f32(
+            convert_i32_s_to_f32(
+                local_load_i32_s(n)
+            )
+        )
+    )
+}

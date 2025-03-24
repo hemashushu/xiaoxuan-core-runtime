@@ -1,5 +1,5 @@
 {
-    name: "mma_base"
+    name: "mm_base"
     version: "1.0.0"
     edition: "2025"
 }

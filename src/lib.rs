@@ -6,13 +6,13 @@
 
 use std::fmt::Display;
 
-mod entry;
 mod fetcher;
 mod locations;
 mod peekableiter;
 mod source_scanner;
 
 pub mod builder;
+pub mod entry;
 pub mod runner;
 
 // files in the launcher_path/runtime_home folder

@@ -1,0 +1,13 @@
+{
+    name: "mm_app"
+    version: "1.0.0"
+    edition: "2025"
+        modules: [
+        "mm_base": module::local({
+            path: "../base"
+        })
+        "mm_medium": module::local({
+            path: "../medium"
+        })
+    ]
+}

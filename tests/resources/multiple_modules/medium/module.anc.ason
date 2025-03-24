@@ -1,9 +1,9 @@
 {
-    name: "mma_math"
+    name: "mm_medium"
     version: "1.0.0"
     edition: "2025"
     modules: [
-        "mma_base": module::local({
+        "mm_base": module::local({
             path: "../base"
         })
     ]

@@ -18,16 +18,17 @@ anc-assembler = { path = "../xiaoxuan-core-assembly/crates/assembler" }
 anc-linker = { path = "../xiaoxuan-core-linker" }
 serde = { version = "1.0.219", features = ["derive"] }
 ason = "1.4.0"
-gix = { version = "0.70.0", features = [
-    "worktree-mutation",
-    "blocking-network-client",
-    "blocking-http-transport-reqwest-rust-tls",
-] }
+# gix = { version = "0.70.0", features = [
+#     "worktree-mutation",
+#     "blocking-network-client",
+#     "blocking-http-transport-reqwest-rust-tls",
+# ] }
 clap = { version = "4.5.32", features = ["derive"] }
 clap_complete = "4.5.47"
 memmap2 = "0.9.5"
 resolve-path = "0.1.0"
 clap_mangen = "0.2.26"
+clap_complete_nushell = "4.5.5"
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"

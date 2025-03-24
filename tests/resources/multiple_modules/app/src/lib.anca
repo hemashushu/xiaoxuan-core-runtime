@@ -1,27 +1,9 @@
-#!/usr/bin/env anc run
-
 // Copyright (c) 2025 Hemashushu <hippospark@gmail.com>, All rights reserved.
 //
 // This Source Code Form is subject to the terms of
 // the Mozilla Public License version 2.0 and additional exceptions,
 // more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
 
-/*
-@config
-{
-    name: "with_conf"
-    version: "1.0.0"
-    edition: "2025"
-        modules: [
-        "mm_base": module::local({
-            path: "../multiple_modules/base"
-        })
-        "mm_medium": module::local({
-            path: "../multiple_modules/medium"
-        })
-    ]
-}
-*/
 
 import fn mm_base::primitive::add(i32,i32)->i32
 import fn mm_base::primitive::subtract(i32,i32)->i32
@@ -55,30 +37,4 @@ pub fn area(x0:i32, y0:i32, x1:i32, y1:i32)->i32
         )
     )
     call(multiply, local_load_i32_s(width), local_load_i32_s(height))
-}
-
-// returns 0
-fn _start()->i32 {
-    // (2,3)
-    //   |-------|
-    //   |       |
-    //   |-------|
-    //          (6,6)
-    //
-    // distance: 5
-    // area: 12
-
-    when
-        ne_i32(
-            call(distance, imm_i32(2), imm_i32(3), imm_i32(6), imm_i32(6))
-            imm_i32(5))
-        break_fn(imm_i32(1))
-
-    when
-        ne_i32(
-            call(area, imm_i32(2), imm_i32(3), imm_i32(6), imm_i32(6))
-            imm_i32(12))
-        break_fn(imm_i32(2))
-
-    imm_i32(0)
 }

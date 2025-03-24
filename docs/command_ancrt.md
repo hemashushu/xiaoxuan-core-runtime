@@ -2,17 +2,17 @@
 
 ## Runner
 
-- `ancrt run </path/to/application> [args]`
+- `ancrt run </path/to/application> [args]...`
   Runs the specified application, which can be a:
 
   - Local file system path of module
   - Path of source file  (for single-file applications)
   - Path of a wrapped application image file
 
-- `ancrt run </path/to/application:unit_name> [args]`
+- `ancrt run </path/to/application:unit_name> [args]...`
   Runs the specified executable unit of an application.
 
-- `ancrt run [:unit_name] [args]`
+- `ancrt run [:unit_name] [args]...`
   Runs the application if the current directory is the root directory of a project.
 
 ## Creator
@@ -41,8 +41,9 @@
 - `ancrt test [path_name_prefix] [/path/to/module]`
   Runs unit tests for the current module. The `path_name_prefix` can be the name of a submodule (e.g. "client" for the namespace "tests::client"), or the partial path name of unit test functions (e.g. "client::test_get" for functions "tests::client::test_get*").
 
-- `ancrt build [/path/to/module]`
+- `ancrt build [--tests] [/path/to/module]`
   Builds the binary image for the specified application or module. When building an application, all dependent modules and libraries will be automatically downloaded.
+  TODO:: --tests, include unit tests.
 
 - `ancrt clean [/path/to/module]`
   Remove artifacts that builder generated.
@@ -84,19 +85,17 @@
 - `ancrt edit <file>`
   Builtin code editor.
 
-- `ancrt shell [command]`
+- `ancrt shell [command-line]`
   Builtin shell.
 
-- `ancrt command <command>`
+- `ancrt command <command-line>`
   Builtin shell commands, such as mount, umount, export, ls, echo, cat, more, vi, mkdir, ln, pwd, rm, mv, cp, chown, chmod, date and exit.
 
 ## Self commands
 
-- `ancrt [-h|--help]`
-- `ancrt --version`
-
-- `ancrt me manpage`
+- `ancrt me manpage [out_dir]`
   Generates man pages.
 
-- `ancrt me completion`
+- `ancrt me completion [--shell shell] [out_dir]`
   Generates shell completion script.
+  `--shell` TODO:: bash, zsh, fish, nushell, powershell

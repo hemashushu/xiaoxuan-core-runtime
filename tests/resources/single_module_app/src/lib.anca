@@ -5,17 +5,39 @@
 // more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
 
 import fn module::base::primitive::add(i32,i32)->i32
-import fn module::base::inc(i32)->i32
-import fn module::base::double(i32)->i32
-import fn module::math::muladd(i32,i32,i32)->i32
+import fn module::base::primitive::subtract(i32,i32)->i32
+import fn module::base::multiply(i32, i32)->i32
+import fn module::medium::square(i32)->i32
+import fn module::medium::square_root(i32)->i32
 
-// returns 348
-pub fn calc()->i32 {
-    call(add
-        call(muladd
-            call(inc, imm_i32(11))      // 11+1 = 12
-            call(double, imm_i32(13))   // 13*2 = 26
-            imm_i32(17))                // 12*26+17 = 329
-        imm_i32(19)                     // 329+19 = 348
+pub fn distance(x0:i32, y0:i32, x1:i32, y1:i32)->i32 {
+    call(square_root,
+        call(add,
+            call(square,
+                call(subtract,
+                    local_load_i32_s(x1), local_load_i32_s(x0)
+                )
+            )
+            call(square,
+                call(subtract,
+                    local_load_i32_s(y1), local_load_i32_s(y0)
+                )
+            )
+        )
     )
+}
+
+pub fn area(x0:i32, y0:i32, x1:i32, y1:i32)->i32
+    [width:i32, height:i32] {
+    local_store_i32(width,
+        call(subtract,
+            local_load_i32_s(x1), local_load_i32_s(x0)
+        )
+    )
+    local_store_i32(height,
+        call(subtract,
+            local_load_i32_s(y1), local_load_i32_s(y0)
+        )
+    )
+    call(multiply, local_load_i32_s(width), local_load_i32_s(height))
 }

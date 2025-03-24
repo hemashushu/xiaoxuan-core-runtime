@@ -4,21 +4,18 @@
 // the Mozilla Public License version 2.0 and additional exceptions,
 // more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
 
-import fn module::base::primitive::add(i32,i32)->i32
-import fn module::base::primitive::mul(i32,i32)->i32
-
-// returns `num + 1`
-pub fn inc(num:i32) -> i32 {
-    call(add
-        local_load_i32_s(num),
-        imm_i32(1)
+// returns `left * right`
+pub fn multiply(left:i32, right:i32) -> i32 {
+    mul_i32(
+        local_load_i32_s(left)
+        local_load_i32_s(right)
     )
 }
 
-// returns `num * 2`
-pub fn double(num:i32) -> i32 {
-    call(mul
-        local_load_i32_s(num)
-        imm_i32(2)
+// returns `left / right`
+pub fn divide(left:i32, right:i32) -> i32 {
+    div_i32_s(
+        local_load_i32_s(left)
+        local_load_i32_s(right)
     )
 }

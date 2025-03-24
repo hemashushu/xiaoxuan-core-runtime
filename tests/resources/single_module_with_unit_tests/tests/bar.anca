@@ -4,20 +4,27 @@
 // the Mozilla Public License version 2.0 and additional exceptions,
 // more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
 
-import fn module::five()->i32
+import fn module::multiply(i32,i32)->i32
+import fn module::divide(i32,i32)->i32
 
-// assert!(five(), 5) -> success (returns 0)
-fn test_five() ->i32 {
-    if -> i32
-        eq_i32(call(five), imm_i32(5))
-        imm_i32(0)
-        imm_i32(1)
+fn test_multiply() ->i32 {
+    when
+        ne_i32(
+            call(multiply, imm_i32(3), imm_i32(5))
+            imm_i32(15)
+        )
+        break_fn(imm_i32(1))
+
+    imm_i32(0)
 }
 
-// assert!(five(), 55) -> failed (returns 1)
-fn test_five_failed() ->i32 {
-    if -> i32
-        eq_i32(call(five), imm_i32(55))
-        imm_i32(0)
-        imm_i32(1)
+fn test_divide() ->i32 {
+    when
+        ne_i32(
+            call(divide, imm_i32(24), imm_i32(3))
+            imm_i32(8)
+        )
+        break_fn(imm_i32(1))
+
+    imm_i32(0)
 }

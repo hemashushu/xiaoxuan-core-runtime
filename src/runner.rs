@@ -17,6 +17,7 @@ use anc_image::{
 };
 use anc_isa::ModuleDependencyType;
 use anc_linker::DEFAULT_ENTRY_FUNCTION_NAME;
+use anc_parser_asm::NAME_PATH_SEPARATOR;
 use anc_processor::{multithread_process::start_program, GenericError};
 use memmap2::Mmap;
 
@@ -29,31 +30,30 @@ use crate::{
 
 pub const EXECUTABLE_UNIT_NAME_SEPARATOR: &str = ":";
 
+/// executable_unit_name:
+///
+/// - internal entry point name: "_start"
+///   executes function: '{app_module_name}::_start' (the default entry point)
+///   user CLI unit name: "" (empty string)
+///
+/// - internal entry point name: "{submodule_name}"
+///   executes function: '{app_module_name}::app::{submodule_name}::_start' (the additional executable units)
+///   user CLI unit name: ":{submodule_name}"
 pub fn launch_application(
     module_path: &Path,
-
-    // executable_unit_name:
-    // - "" (empty string)
-    //   executes function 'app_module_name::_start', the default entry point.
-    //   internal entry point name is "_start".
-    //
-    // - ":{submodule_name}"
-    //   executes 'app_module_name::app::{submodule_name}::_start', the additional executable units.
-    //   internal entry point name is the name of submodule.
     executable_unit_name: &str,
     arguments: Vec<String>,                // program arguments
-    environments: HashMap<String, String>, // environment variables
-    extra_registries: Vec<String>,
+    environments: HashMap<String, String>, // environment variables (Key-value pairs)
+    logger: &mut dyn Write,
 ) -> Result<u32, GenericError> {
-    let runtime_property = RuntimeProperty::from_runtime_exec_file(&extra_registries)?;
+    let runtime_property = RuntimeProperty::from_runtime_exec_file()?;
 
     let runtime_home = &runtime_property.runtime_home;
     if !runtime_home.exists() {
         std::fs::create_dir_all(runtime_home).unwrap();
     }
 
-    let (image_files, _entry_point_entries) =
-        load_application(module_path, &runtime_property, false)?;
+    let (image_files, _) = load_application(module_path, &runtime_property, false, logger)?;
 
     // create process
 
@@ -77,22 +77,20 @@ pub fn launch_application(
     execute_unit(&image_files, &entry_point_name, process_property)
 }
 
+/// unit_test_name_path_prefix
+///
+/// - internal entry point name: "{submodule_name}::test_*"
+///   executes function: '{app_module_name}::tests::{submodule_name}::test_*' (unit tests)
+///   user CLI unit name: name path prefix, e.g. "{submodule_name}", "{submodule_name}::test_get_"
 pub fn launch_unit_tests(
     module_path: &Path,
-
-    // matching any function with the specified prefix path name, e.g.
-    // - "{submodule_name}::" matches functions "app_module_name::tests::{submodule_name}::test_*".
-    // - "{submodule_name}::test_abc*" matches functions "app_module_name::tests::{submodule_name}::test_abc*".
-    //
-    // note that the internal entry point name is "{submodule_name}::test_*".
     unit_test_name_path_prefix: &str,
-
     arguments: Vec<String>,                // program arguments
     environments: HashMap<String, String>, // environment variables
-    extra_registries: Vec<String>,
+    // extra_registries: Vec<String>,
     logger: &mut dyn Write,
 ) -> Result<Vec<UnitTestResult>, GenericError> {
-    let runtime_property = RuntimeProperty::from_runtime_exec_file(&extra_registries)?;
+    let runtime_property = RuntimeProperty::from_runtime_exec_file()?;
 
     let runtime_home = &runtime_property.runtime_home;
     if !runtime_home.exists() {
@@ -100,7 +98,7 @@ pub fn launch_unit_tests(
     }
 
     let (image_files, entry_point_entries) =
-        load_application(module_path, &runtime_property, true)?;
+        load_application(module_path, &runtime_property, true, logger)?;
 
     let process_property = ProcessProperty {
         application_path: module_path.to_path_buf(),
@@ -117,20 +115,27 @@ pub fn launch_unit_tests(
         .filter(|entry_point_entry| {
             entry_point_entry
                 .unit_name
+                .contains(NAME_PATH_SEPARATOR) &&
+            entry_point_entry
+                .unit_name
                 .starts_with(unit_test_name_path_prefix)
         })
         .count();
 
-    writeln!(logger, "running {count} tests")?;
+    writeln!(logger, "Running {count} test(s)")?;
 
     for entry_point_entry in &entry_point_entries {
         let entry_point_name = &entry_point_entry.unit_name;
         if entry_point_name.starts_with(unit_test_name_path_prefix) {
-            write!(logger, "testing {entry_point_name} ... ")?;
+            writeln!(logger, "Running {entry_point_name}")?;
 
             let result = execute_unit(&image_files, entry_point_name, process_property.clone())?;
             let success = result == 0;
-            writeln!(logger, "{}", if success { "ok" } else { "FAILED" })?;
+            writeln!(
+                logger,
+                "Unit \"{entry_point_name}\": {}",
+                if success { "ok" } else { "FAILED" }
+            )?;
 
             unit_test_results.push(UnitTestResult {
                 name: entry_point_name.to_owned(),
@@ -158,9 +163,9 @@ pub fn launch_single_file_application(
     script_file_path: &Path,
     arguments: Vec<String>,                // program arguments
     environments: HashMap<String, String>, // environment variables
-    extra_registries: Vec<String>,
+    logger: &mut dyn Write,
 ) -> Result<u32, GenericError> {
-    let runtime_property = RuntimeProperty::from_runtime_exec_file(&extra_registries)?;
+    let runtime_property = RuntimeProperty::from_runtime_exec_file()?;
 
     let runtime_home = &runtime_property.runtime_home;
     if !runtime_home.exists() {
@@ -168,7 +173,7 @@ pub fn launch_single_file_application(
     }
 
     let (main_image_data, image_files, _entry_point_entries) =
-        load_single_file_application(script_file_path, &runtime_property)?;
+        load_single_file_application(script_file_path, &runtime_property, logger)?;
 
     // create process
 
@@ -182,22 +187,22 @@ pub fn launch_single_file_application(
     execute_script(main_image_data, &image_files, process_property)
 }
 
+/// internal entry point names:
+///
+/// - internal entry point name: "_start"
+///   executes function: '{app_module_name}::_start' (the default entry point)
+///   user CLI unit name: "" (empty string)
+///
+/// - internal entry point name: "{submodule_name}"
+///   executes function: '{app_module_name}::app::{submodule_name}::_start' (the additional executable units)
+///   user CLI unit name: ":{submodule_name}"
+///
+/// - internal entry point name: "{submodule_name}::test_*"
+///   executes function: '{app_module_name}::tests::{submodule_name}::test_*' (unit tests)
+///   user CLI unit name: name path prefix, e.g. "{submodule_name}", "{submodule_name}::test_get_"
 fn execute_unit(
     image_files: &[File],
-
-    // entry point names:
-    // - "_start"
-    //   executes function 'app_module_name::_start', the default entry point.
-    //   public executable unit name is: "" (empty string).
-    //
-    // - "submodule_name"
-    //   executes function 'app_module_name::app::{submodule_name}::_start', the additional executable units.
-    //   public executable unit name is: ".{submodule_name}"
-    //
-    // - "submodule_name::test_*"
-    //   executes function 'app_module_name::tests::{submodule_name}::test_*' for unit test.
-    //   public executable unit name is: matching any prefix of "submodule_name::test_*"
-    entry_point_name: &str,
+    internal_entry_point_name: &str,
     process_property: ProcessProperty,
 ) -> Result<u32, GenericError> {
     let mut mapped_files = vec![];
@@ -209,7 +214,7 @@ fn execute_unit(
 
     let resource = MappedFileProcessResource::new(mapped_files, process_property);
     let process_context = resource.create_process_context()?;
-    start_program(&process_context, entry_point_name, vec![])
+    start_program(&process_context, internal_entry_point_name, vec![])
 }
 
 fn execute_script(
@@ -233,12 +238,14 @@ fn load_application(
     module_path: &Path,
     runtime_property: &RuntimeProperty,
     include_unit_tests: bool,
+    logger: &mut dyn Write,
 ) -> Result<(Vec<File>, Vec<EntryPointEntry>), RuntimeError> {
     let (_, index_entry, application_image_file_full_path) = build_application_by_dependency_tree(
         module_path,
         ModuleDependencyType::Local,
         runtime_property,
         include_unit_tests,
+        logger,
     )?;
 
     let mut image_file_paths = vec![application_image_file_full_path];
@@ -268,9 +275,10 @@ fn load_application(
 fn load_single_file_application(
     script_file_path: &Path,
     runtime_property: &RuntimeProperty,
+    logger: &mut dyn Write,
 ) -> Result<(Vec<u8>, Vec<File>, Vec<EntryPointEntry>), RuntimeError> {
     let (_, index_entry, main_image_data) =
-        build_application_by_single_file(script_file_path, runtime_property)?;
+        build_application_by_single_file(script_file_path, runtime_property, logger)?;
 
     let mut image_file_paths = vec![];
 
@@ -395,6 +403,9 @@ mod tests {
 
     #[test]
     fn test_launch_application() {
+        let mut output: Vec<u8> = vec![];
+        // let mut output = stdout();
+
         // single_module_app
         {
             let mut moudle_path_buf = get_resources_path_buf();
@@ -405,63 +416,63 @@ mod tests {
                 "",
                 vec![],
                 HashMap::<String, String>::new(),
-                vec![],
+                &mut output,
             );
 
-            assert_eq!(result0.unwrap(), 11);
+            assert_eq!(result0.unwrap(), 0);
         }
 
-        // single_module_app_with_executable_units
+        // single_module_with_multiple_executable_units
         {
             let mut moudle_path_buf = get_resources_path_buf();
-            moudle_path_buf.push("single_module_app_with_executable_units");
+            moudle_path_buf.push("single_module_with_multiple_executable_units");
 
             let result0 = launch_application(
                 &moudle_path_buf,
                 "",
                 vec![],
                 HashMap::<String, String>::new(),
-                vec![],
+                &mut output,
             );
 
-            assert_eq!(result0.unwrap(), 2);
+            assert_eq!(result0.unwrap(), 0);
 
             let result1 = launch_application(
                 &moudle_path_buf,
                 ":foo",
                 vec![],
                 HashMap::<String, String>::new(),
-                vec![],
+                &mut output,
             );
 
-            assert_eq!(result1.unwrap(), 3);
+            assert_eq!(result1.unwrap(), 0);
 
             let result2 = launch_application(
                 &moudle_path_buf,
                 ":bar",
                 vec![],
                 HashMap::<String, String>::new(),
-                vec![],
+                &mut output,
             );
 
-            assert_eq!(result2.unwrap(), 5);
+            assert_eq!(result2.unwrap(), 0);
         }
 
-        // multiple_module_app
+        // multiple_modules
         {
             let mut moudle_path_buf = get_resources_path_buf();
-            moudle_path_buf.push("multiple_module_app");
-            moudle_path_buf.push("cli");
+            moudle_path_buf.push("multiple_modules");
+            moudle_path_buf.push("app");
 
             let result0 = launch_application(
                 &moudle_path_buf,
                 "",
                 vec![],
                 HashMap::<String, String>::new(),
-                vec![],
+                &mut output,
             );
 
-            assert_eq!(result0.unwrap(), 11);
+            assert_eq!(result0.unwrap(), 0);
         }
     }
 
@@ -480,17 +491,16 @@ mod tests {
                 "",
                 vec![],
                 HashMap::<String, String>::new(),
-                vec![],
                 &mut output,
             );
 
             assert_eq!(
                 result0.unwrap(),
                 vec![
-                    UnitTestResult::new("foo::test_two".to_owned(), true),
-                    UnitTestResult::new("foo::test_three".to_owned(), true),
-                    UnitTestResult::new("bar::test_five".to_owned(), true),
-                    UnitTestResult::new("bar::test_five_failed".to_owned(), false),
+                    UnitTestResult::new("foo::test_add".to_owned(), true),
+                    UnitTestResult::new("foo::test_subtract".to_owned(), true),
+                    UnitTestResult::new("bar::test_multiply".to_owned(), true),
+                    UnitTestResult::new("bar::test_divide".to_owned(), true),
                 ]
             )
         }
@@ -502,18 +512,17 @@ mod tests {
 
             let result0 = launch_unit_tests(
                 &moudle_path_buf,
-                "foo::",
+                "foo",
                 vec![],
                 HashMap::<String, String>::new(),
-                vec![],
                 &mut output,
             );
 
             assert_eq!(
                 result0.unwrap(),
                 vec![
-                    UnitTestResult::new("foo::test_two".to_owned(), true),
-                    UnitTestResult::new("foo::test_three".to_owned(), true),
+                    UnitTestResult::new("foo::test_add".to_owned(), true),
+                    UnitTestResult::new("foo::test_subtract".to_owned(), true),
                 ]
             )
         }
@@ -521,6 +530,9 @@ mod tests {
 
     #[test]
     fn test_launch_script_application() {
+        let mut output: Vec<u8> = vec![];
+        // let mut output = stdout();
+
         // no config
         {
             let mut script_file_path_buf = get_resources_path_buf();
@@ -531,10 +543,10 @@ mod tests {
                 &script_file_path_buf,
                 vec![],
                 HashMap::<String, String>::new(),
-                vec![],
+                &mut output,
             );
 
-            assert_eq!(result0.unwrap(), 13);
+            assert_eq!(result0.unwrap(), 0);
         }
 
         // with config
@@ -547,10 +559,10 @@ mod tests {
                 &script_file_path_buf,
                 vec![],
                 HashMap::<String, String>::new(),
-                vec![],
+                &mut output,
             );
 
-            assert_eq!(result0.unwrap(), 11);
+            assert_eq!(result0.unwrap(), 0);
         }
     }
 }

@@ -4,21 +4,27 @@
 // the Mozilla Public License version 2.0 and additional exceptions,
 // more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
 
-import fn module::two()->i32
-import fn module::three()->i32
+import fn module::add(i32,i32)->i32
+import fn module::subtract(i32,i32)->i32
 
-// assert!(two(), 2) -> success (returns 0)
-fn test_two() ->i32 {
-    if -> i32
-        eq_i32(call(two), imm_i32(2))
-        imm_i32(0)
-        imm_i32(1)
+fn test_add() ->i32 {
+    when
+        ne_i32(
+            call(add, imm_i32(11), imm_i32(13))
+            imm_i32(24)
+        )
+        break_fn(imm_i32(1))
+
+    imm_i32(0)
 }
 
-// assert!(three(), 3) -> success (returns 0)
-fn test_three() ->i32 {
-    if -> i32
-        eq_i32(call(three), imm_i32(3))
-        imm_i32(0)
-        imm_i32(1)
+fn test_subtract() ->i32 {
+    when
+        ne_i32(
+            call(subtract, imm_i32(23), imm_i32(13))
+            imm_i32(10)
+        )
+        break_fn(imm_i32(1))
+
+    imm_i32(0)
 }

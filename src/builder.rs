@@ -7,6 +7,7 @@
 use std::{
     collections::{HashMap, VecDeque},
     fs::File,
+    io::Write,
     path::{Path, PathBuf},
 };
 
@@ -17,7 +18,7 @@ use anc_image::{
         ImportModuleEntry, ModuleLocation, ModuleLocationLocal, ModuleLocationRemote,
         ModuleLocationShare,
     },
-    entry_reader::read_object_file,
+    entry_reader::{read_image_file, read_object_file},
     entry_writer::{write_image_file, write_object_file},
     format_dependency_hash, DependencyHash, DEPENDENCY_HASH_ZERO,
 };
@@ -57,23 +58,23 @@ pub const INLINE_CONFIG_MARK: &str = "@config";
 /// The last modification time of source files is checked and no
 /// module image is generated if all source files remain unchanged.
 ///
+/// Returns:
+/// - None (no changes)
+/// - ImageCommonEntry
+///
 /// This procedure does not generate the application sections.
 pub fn build_module(
     module_path: &Path,
     dependency_hash: &DependencyHash,
     include_unit_tests: bool,
+    logger: &mut dyn Write,
 ) -> Result<Option<ImageCommonEntry>, RuntimeError> {
     // module config
     let module_config_file_path = get_module_config_file_path(module_path);
     let module_config = ModuleConfig::load(&module_config_file_path)?;
 
-    // seal module can not be recompiled
-    if module_config.seal {
-        return Err(RuntimeError::Message(format!(
-            "The module \"{}\"is sealed so it cannot be recompiled.",
-            module_path.to_str().unwrap()
-        )));
-    };
+    let module_name = &module_config.name;
+    writeln!(logger, "[{}] Building module", module_name).unwrap();
 
     let (import_module_entries, external_library_entries) =
         module_config.get_dependencies_by_module_config();
@@ -132,7 +133,7 @@ pub fn build_module(
         // - submodule name path: "network::http::get"
         canonical_name: String,
 
-        // `canonical_name` is the `canonical_name` with replacing '-' with '::',
+        // `name_path` is the `canonical_name` with replacing '-' with '::',
         // e.g.
         // - canonical name: "network-http-get"
         // - submodule name path: "network::http::get"
@@ -289,10 +290,18 @@ pub fn build_module(
 
             // assemble
             for pending_assemble_item in &pending_assemble_items {
-                println!(
-                    "!! assemble: {}",
-                    pending_assemble_item.source_path_buf.to_str().unwrap()
-                );
+                let source_relative_path = pending_assemble_item
+                    .source_path_buf
+                    .strip_prefix(module_path)
+                    .unwrap();
+                let source_relative_path_string = source_relative_path.to_str().unwrap();
+
+                writeln!(
+                    logger,
+                    "[{}] Assembling: {}",
+                    module_name, source_relative_path_string
+                )
+                .unwrap();
 
                 // rename the name path of the top most submodule:
                 // - "lib.{anc,ancr,anca}"
@@ -321,18 +330,18 @@ pub fn build_module(
                     get_object_file_path(&object_path, &pending_assemble_item.canonical_name);
                 save_object_file(&image_common_entry, &object_file_path)?;
 
-                println!(
-                    ">> write object file: {}",
-                    object_file_path.to_str().unwrap()
-                );
+                let object_relative_path = object_file_path.strip_prefix(module_path).unwrap();
+                let object_relative_path_string = object_relative_path.to_str().unwrap();
+
+                writeln!(
+                    logger,
+                    "[{}] Write object file: {}",
+                    module_name, object_relative_path_string
+                )
+                .unwrap();
 
                 // append generated object file
                 object_files.push(object_file_path);
-
-                println!(
-                    "^^ update assembly meta: {}",
-                    pending_assemble_item.meta_file_path.to_str().unwrap()
-                );
 
                 save_object_meta(
                     pending_assemble_item.timestamp_opt,
@@ -370,14 +379,21 @@ pub fn build_module(
             image_common_entries.push(image_common_entry);
         }
 
-        println!(
-            ">> write module binary: {}",
-            shared_module_file_path.to_str().unwrap()
-        );
+        let image_relative_path = shared_module_file_path.strip_prefix(module_path).unwrap();
+        let image_relative_path_string = image_relative_path.to_str().unwrap();
 
-        let module_name = &module_config.name;
+        writeln!(logger, "[{}] Linking module", module_name).unwrap();
+
         let module_version = EffectiveVersion::from_str(&module_config.version);
         let module_entry = link(module_name, &module_version, &image_common_entries)?;
+
+        writeln!(
+            logger,
+            "[{}] Write module binary file: {}",
+            module_name, image_relative_path_string
+        )
+        .unwrap();
+
         save_shared_module_file(&module_entry, &shared_module_file_path)?;
 
         Some(module_entry)
@@ -385,11 +401,6 @@ pub fn build_module(
 
     // update config file meta
     if is_module_config_changed {
-        println!(
-            "^^ update module config meta: {}",
-            module_config_meta_file_path.to_str().unwrap()
-        );
-
         std::fs::create_dir_all(&asset_path)
             .map_err(|e| RuntimeError::Message(format!("{}", e)))?;
         save_module_config_meta(module_config_timestamp_opt, &module_config_meta_file_path)?;
@@ -398,18 +409,23 @@ pub fn build_module(
     Ok(module_entry_opt)
 }
 
-/// Recompile if the module image does not exist and it is not sealing.
-/// Cache checking can be bypasswd with the parameter "check_modification".
+/// Recompile if the module image does not exist.
+/// Set parameter "check_modification" to `true` to check source for changes.
 /// Note that only the local module needs to be checked for changes
 /// each time it is run.
+///
+/// Returns `(entry: ImageCommonEntry, changed:bool)`
 pub fn load_or_build_module(
     module_path: &Path,
     dependency_hash_opt: Option<&DependencyHash>,
     include_unit_tests: bool,
     check_modification: bool,
-) -> Result<ImageCommonEntry, RuntimeError> {
+    logger: &mut dyn Write,
+) -> Result<(ImageCommonEntry, bool), RuntimeError> {
     // module config
     let module_config_file_path = get_module_config_file_path(module_path);
+
+    // todo:: check if the module config file exists
     let module_config = ModuleConfig::load(&module_config_file_path)?;
 
     // output folders
@@ -427,29 +443,35 @@ pub fn load_or_build_module(
     };
 
     if is_shared_module_file_exist && (module_config.seal || !check_modification) {
-        load_module(&shared_module_file_path)
+        let image_common_entry = load_module(&shared_module_file_path)?;
+        Ok((image_common_entry, false))
     } else {
         match build_module(
             module_path,
             dependency_hash_opt.unwrap(),
             include_unit_tests,
+            logger,
         ) {
             Ok(module_opt) => match module_opt {
                 // rebuild
-                Some(module) => Ok(module),
-                // source is not changed
-                None => load_module(&shared_module_file_path),
+                Some(module) => Ok((module, true)),
+                // source has no changes
+                None => {
+                    let image_common_entry = load_module(&shared_module_file_path)?;
+                    Ok((image_common_entry, false))
+                }
             },
             Err(e) => Err(e),
         }
     }
 }
 
-pub fn load_or_build_module_by_import_module_entry(
+pub fn load_or_build_module_as_dependent(
     parent_module_path: &Path,
     import_module_entry: &ImportModuleEntry,
     runtime_property: &RuntimeProperty,
-) -> Result<(PathBuf, Option<DependencyHash>, ImageCommonEntry), RuntimeError> {
+    logger: &mut dyn Write,
+) -> Result<(PathBuf, Option<DependencyHash>, ImageCommonEntry, bool), RuntimeError> {
     let ImportModuleEntry {
         name: module_name,
         module_dependency,
@@ -539,12 +561,17 @@ pub fn load_or_build_module_by_import_module_entry(
         ModuleDependency::Module => unreachable!(),
     };
 
-    let image_common_entry =
-        load_or_build_module(&module_path, hash_opt.as_ref(), false, check_modification)?;
+    let (image_common_entry, changed) = load_or_build_module(
+        &module_path,
+        hash_opt.as_ref(),
+        false,
+        check_modification,
+        logger,
+    )?;
 
-    let mp = module_path.canonicalize().unwrap();
+    let module_path_actual = module_path.canonicalize().unwrap();
 
-    Ok((mp, hash_opt, image_common_entry))
+    Ok((module_path_actual, hash_opt, image_common_entry, changed))
 }
 
 pub fn build_application_by_dependency_tree(
@@ -552,75 +579,114 @@ pub fn build_application_by_dependency_tree(
     module_dependency_type: ModuleDependencyType,
     runtime_property: &RuntimeProperty,
     include_unit_tests: bool,
+    logger: &mut dyn Write,
 ) -> Result<(ImageCommonEntry, ImageIndexEntry, PathBuf), RuntimeError> {
-    // todo:: calculate the hash
-    // todo:: using the default properties and compilation environment varialbes
     let main_hash = DEPENDENCY_HASH_ZERO;
-    let main_module = load_or_build_module(
+    let (main_module, main_module_changed) = load_or_build_module(
         module_path,
         Some(&main_hash),
         include_unit_tests,
         module_dependency_type == ModuleDependencyType::Local,
+        logger,
     )?;
 
     let module_name = main_module.name.clone();
 
     // build all dependent modules
-    let (mut image_common_entries, mut dynamic_link_module_entries) =
+    let (mut image_common_entries, mut dynamic_link_module_entries, dependency_module_changed) =
         build_all_dependent_modules_by_dependency_tree(
             &module_name,
             module_path,
             &main_module,
             module_dependency_type,
             runtime_property,
+            logger,
         )?;
 
-    // build index
-    // append main module to all common module entries
-    image_common_entries.insert(0, main_module);
-    dynamic_link_module_entries.insert(
-        0,
-        DynamicLinkModuleEntry {
-            name: module_name.to_owned(),
-            module_location: Box::new(ModuleLocation::Embed),
-        },
-    );
-    let index_entry = index(&mut image_common_entries, &dynamic_link_module_entries)?;
-    let common_entry = image_common_entries.remove(0);
-
-    // save image file
+    // application image file
     let output_path = get_module_folder_output_path(module_path);
     let application_image_file_full_path =
         get_application_module_image_file_path_by_output_path(&output_path, &module_name);
 
-    save_application_image_file(
-        &common_entry,
-        &index_entry,
-        &application_image_file_full_path,
-    )?;
+    if !(main_module_changed || dependency_module_changed)
+        && application_image_file_full_path.exists()
+    {
+        writeln!(logger, "[{}] No change in the source code", module_name).unwrap();
 
-    Ok((common_entry, index_entry, application_image_file_full_path))
+        let image_binary = std::fs::read(&application_image_file_full_path)
+            .map_err(|e| RuntimeError::Message(format!("{}", e)))?;
+        let (common_entry, index_entry) =
+            read_image_file(&image_binary).map_err(|e| RuntimeError::Message(format!("{}", e)))?;
+
+        Ok((common_entry, index_entry, application_image_file_full_path))
+    } else {
+        writeln!(logger, "[{}] Linking application", module_name).unwrap();
+
+        // build index
+        // append main module to all common module entries
+        image_common_entries.insert(0, main_module);
+        dynamic_link_module_entries.insert(
+            0,
+            DynamicLinkModuleEntry {
+                name: module_name.to_owned(),
+                module_location: Box::new(ModuleLocation::Embed),
+            },
+        );
+        let index_entry = index(&mut image_common_entries, &dynamic_link_module_entries)?;
+        let common_entry = image_common_entries.remove(0);
+
+        // save image file
+
+        let image_relative_path = application_image_file_full_path
+            .strip_prefix(module_path)
+            .unwrap();
+        let image_relative_path_string = image_relative_path.to_str().unwrap();
+
+        writeln!(
+            logger,
+            "[{}] Write application image file: {}",
+            module_name, image_relative_path_string
+        )
+        .unwrap();
+
+        save_application_image_file(
+            &common_entry,
+            &index_entry,
+            &application_image_file_full_path,
+        )?;
+
+        Ok((common_entry, index_entry, application_image_file_full_path))
+    }
 }
 
 pub fn build_application_by_dependency_list(
     _module_path: &Path,
     _module_dependency_type: ModuleDependencyType,
     _runtime_property: &RuntimeProperty,
-) -> Result<(), RuntimeError> {
+) -> Result<(ImageCommonEntry, ImageIndexEntry, PathBuf), RuntimeError> {
     todo!()
 }
 
+/// Build single-file application in memory
 pub fn build_application_by_single_file(
     script_file_path: &Path,
     runtime_property: &RuntimeProperty,
+    logger: &mut dyn Write,
 ) -> Result<(ImageCommonEntry, ImageIndexEntry, Vec<u8>), RuntimeError> {
+    // todo: check extension name
+    // RuntimeError::Message(
+    // "The specified file \"{}\" is not a source file recongized by ANC (*.anc, *.ancir, *.anca)".to_owned())
+
     let source_code = std::fs::read_to_string(script_file_path)
         .map_err(|e| RuntimeError::Message(format!("{}", e)))?;
 
     let module_config_from_file_opt =
         load_inline_config_from_single_file_application_source(&source_code)?;
+
     let module_config = if let Some(module_config_from_file) = module_config_from_file_opt {
         module_config_from_file
+
+        // todo:: remove `seal` flag if it exists
     } else {
         let file_base_name = script_file_path.file_stem().unwrap().to_str().unwrap();
 
@@ -648,13 +714,14 @@ pub fn build_application_by_single_file(
     )?;
 
     // build all dependent modules
-    let (mut image_common_entries, mut dynamic_link_module_entries) =
+    let (mut image_common_entries, mut dynamic_link_module_entries, _) =
         build_all_dependent_modules_by_dependency_tree(
             &module_name,
             module_path,
             &main_module,
             ModuleDependencyType::Local,
             runtime_property,
+            logger,
         )?;
 
     // build index
@@ -667,10 +734,11 @@ pub fn build_application_by_single_file(
             module_location: Box::new(ModuleLocation::Embed),
         },
     );
+
     let index_entry = index(&mut image_common_entries, &dynamic_link_module_entries)?;
     let common_entry = image_common_entries.remove(0);
 
-    // save
+    // save to memory
     let mut buffer: Vec<u8> = vec![];
 
     write_image_file(&common_entry, &index_entry, &mut buffer)
@@ -682,13 +750,16 @@ pub fn build_application_by_single_file(
 /// If a module is referenced multiple times in the dependency tree with
 /// different parameters, there is a risk that the program may not run correctly
 /// because the application will only select one of the dependent parameters.
+///
+/// Returns `(Vec<ImageCommonEntry>, Vec<DynamicLinkModuleEntry>, any_module_changed:bool)`
 fn build_all_dependent_modules_by_dependency_tree(
     module_name: &str,
     module_path: &Path,
     main_module: &ImageCommonEntry,
     module_dependency_type: ModuleDependencyType,
     runtime_property: &RuntimeProperty,
-) -> Result<(Vec<ImageCommonEntry>, Vec<DynamicLinkModuleEntry>), RuntimeError> {
+    logger: &mut dyn Write,
+) -> Result<(Vec<ImageCommonEntry>, Vec<DynamicLinkModuleEntry>, bool), RuntimeError> {
     let mut loaded_module_items: Vec<DependencyBuildCompleteItem> = vec![]; // all loaded modules
     let mut pending_import_module_items = VecDeque::<DependencyBuildPendingItem>::new();
 
@@ -702,20 +773,27 @@ fn build_all_dependent_modules_by_dependency_tree(
     )?;
 
     // build each dependency
+    let mut any_module_changed = false;
+
     while !pending_import_module_items.is_empty() {
         let module_build_pending_item = pending_import_module_items.pop_front().unwrap();
-        let (new_module_path, new_hash_opt, new_module_entry) =
-            load_or_build_module_by_import_module_entry(
+
+        let (new_module_path, new_hash_opt, new_module_entry, changed) =
+            load_or_build_module_as_dependent(
                 &module_build_pending_item.parent_module_path_buf,
                 &module_build_pending_item.import_module_entry,
                 runtime_property,
+                logger,
             )?;
+
+        any_module_changed |= changed;
 
         let new_module_denpendency = module_build_pending_item
             .import_module_entry
             .module_dependency
             .as_ref()
             .to_owned();
+
         let new_module_dependency_type = get_module_dependency_type(&new_module_denpendency);
 
         // append dependencies of the current module
@@ -835,7 +913,9 @@ fn build_all_dependent_modules_by_dependency_tree(
         }
     }
 
-    // remove dangling modules (i.e., modules that are not referenced by any other module)
+    /*
+     * get the list of dangling modules (i.e., modules that are not referenced by any other module)
+     */
 
     // start traversing from the root node (i.e., the main module), and add
     // only non-dangling modules. (there may be modules introduced by modules that
@@ -894,7 +974,7 @@ fn build_all_dependent_modules_by_dependency_tree(
         let name = &dedup_module_items[idx].image_common_entry.name;
         let existing = effective_names.iter().any(|item| *item == name);
         if !existing {
-            println!("** REMOVE dangling moudle: {}", name);
+            // remove dangling moudle
             dedup_module_items.remove(idx);
         }
     }
@@ -939,7 +1019,11 @@ fn build_all_dependent_modules_by_dependency_tree(
         image_common_entries.push(image_common_entry);
     }
 
-    Ok((image_common_entries, dynamic_link_module_entries))
+    Ok((
+        image_common_entries,
+        dynamic_link_module_entries,
+        any_module_changed,
+    ))
 }
 
 fn add_import_module_entries_to_build_pending_items_with_rules_check(
@@ -1306,6 +1390,9 @@ mod tests {
 
     #[test]
     fn test_build_module() {
+        let mut output: Vec<u8> = vec![];
+        // let mut output = stdout();
+
         let hash_opt = Some(&DEPENDENCY_HASH_ZERO);
 
         // single_module_app
@@ -1314,27 +1401,29 @@ mod tests {
             moudle_path_buf.push("single_module_app");
 
             // load or rebuild
-            let result0 = load_or_build_module(&moudle_path_buf, hash_opt, false, true);
+            let result0 =
+                load_or_build_module(&moudle_path_buf, hash_opt, false, true, &mut output);
             assert!(result0.is_ok());
             // todo: check entries
 
             // unchanged
-            let result1 = build_module(&moudle_path_buf, &DEPENDENCY_HASH_ZERO, false);
+            let result1 = build_module(&moudle_path_buf, &DEPENDENCY_HASH_ZERO, false, &mut output);
             assert!(matches!(result1, Ok(None)));
         }
 
-        // single_module_app_with_executable_units
+        // single_module_with_multiple_executable_units
         {
             let mut moudle_path_buf = get_resources_path_buf();
-            moudle_path_buf.push("single_module_app_with_executable_units");
+            moudle_path_buf.push("single_module_with_multiple_executable_units");
 
             // load or rebuild
-            let result0 = load_or_build_module(&moudle_path_buf, hash_opt, false, true);
+            let result0 =
+                load_or_build_module(&moudle_path_buf, hash_opt, false, true, &mut output);
             assert!(result0.is_ok());
             // todo: check entries
 
             // unchanged
-            let result1 = build_module(&moudle_path_buf, &DEPENDENCY_HASH_ZERO, false);
+            let result1 = build_module(&moudle_path_buf, &DEPENDENCY_HASH_ZERO, false, &mut output);
             assert!(matches!(result1, Ok(None)));
         }
 
@@ -1344,23 +1433,27 @@ mod tests {
             moudle_path_buf.push("single_module_with_unit_tests");
 
             // load or rebuild without unit tests
-            let result0 = load_or_build_module(&moudle_path_buf, hash_opt, false, true);
+            let result0 =
+                load_or_build_module(&moudle_path_buf, hash_opt, false, true, &mut output);
             assert!(result0.is_ok());
             // todo: check entries
 
             // load or rebuild with unit tests
-            let result1 = load_or_build_module(&moudle_path_buf, hash_opt, true, true);
+            let result1 = load_or_build_module(&moudle_path_buf, hash_opt, true, true, &mut output);
             assert!(result1.is_ok());
             // todo: check unit test entries
 
             // unchanged
-            let result2 = build_module(&moudle_path_buf, &DEPENDENCY_HASH_ZERO, true);
+            let result2 = build_module(&moudle_path_buf, &DEPENDENCY_HASH_ZERO, true, &mut output);
             assert!(matches!(result2, Ok(None)));
         }
     }
 
     #[test]
     fn test_build_application_by_dependencies() {
+        let mut output: Vec<u8> = vec![];
+        // let mut output = stdout();
+
         let runtime_property = get_runtime_property();
 
         // single_module_app
@@ -1373,21 +1466,23 @@ mod tests {
                 ModuleDependencyType::Local,
                 &runtime_property,
                 true,
+                &mut output,
             );
             assert!(result0.is_ok());
             // todo: check entries
         }
 
-        // single_module_app_with_executable_units
+        // single_module_with_multiple_executable_units
         {
             let mut moudle_path_buf = get_resources_path_buf();
-            moudle_path_buf.push("single_module_app_with_executable_units");
+            moudle_path_buf.push("single_module_with_multiple_executable_units");
 
             let result0 = build_application_by_dependency_tree(
                 &moudle_path_buf,
                 ModuleDependencyType::Local,
                 &runtime_property,
                 true,
+                &mut output,
             );
             assert!(result0.is_ok());
             // todo: check entries
@@ -1403,22 +1498,24 @@ mod tests {
                 ModuleDependencyType::Local,
                 &runtime_property,
                 true,
+                &mut output,
             );
             assert!(result0.is_ok());
             // todo: check entries
         }
 
-        // multiple_module_app
+        // multiple_modules
         {
             let mut moudle_path_buf = get_resources_path_buf();
-            moudle_path_buf.push("multiple_module_app");
-            moudle_path_buf.push("cli");
+            moudle_path_buf.push("multiple_modules");
+            moudle_path_buf.push("app");
 
             let result0 = build_application_by_dependency_tree(
                 &moudle_path_buf,
                 ModuleDependencyType::Local,
                 &runtime_property,
                 true,
+                &mut output,
             );
 
             assert!(result0.is_ok());
@@ -1428,6 +1525,9 @@ mod tests {
 
     #[test]
     fn test_build_application_by_single_file() {
+        let mut output: Vec<u8> = vec![];
+        // let mut output = stdout();
+
         let runtime_property = get_runtime_property();
 
         // no config
@@ -1436,8 +1536,11 @@ mod tests {
             script_file_path_buf.push("single_file_app");
             script_file_path_buf.push("no_conf.anca");
 
-            let result0 =
-                build_application_by_single_file(&script_file_path_buf, &runtime_property);
+            let result0 = build_application_by_single_file(
+                &script_file_path_buf,
+                &runtime_property,
+                &mut output,
+            );
 
             assert!(result0.is_ok());
             // todo: check entries
@@ -1449,8 +1552,11 @@ mod tests {
             script_file_path_buf.push("single_file_app");
             script_file_path_buf.push("with_conf.anca");
 
-            let result0 =
-                build_application_by_single_file(&script_file_path_buf, &runtime_property);
+            let result0 = build_application_by_single_file(
+                &script_file_path_buf,
+                &runtime_property,
+                &mut output,
+            );
 
             assert!(result0.is_ok());
             // todo: check entries
