@@ -329,11 +329,11 @@ impl ProcessResource for MappedFileProcessResource {
             module_images.push(module_image);
         }
 
-        let process_context = ProcessContext {
-            process_property: &self.process_property,
+        let process_context = ProcessContext::new(
+            &self.process_property,
+            &self.external_function_table,
             module_images,
-            external_function_table: &self.external_function_table,
-        };
+        );
 
         Ok(process_context)
     }
@@ -373,11 +373,11 @@ impl ProcessResource for ScriptFileProcessResource {
             module_images.push(module_image);
         }
 
-        let process_context = ProcessContext {
-            process_property: &self.process_property,
+        let process_context = ProcessContext::new(
+            &self.process_property,
+            &self.external_function_table,
             module_images,
-            external_function_table: &self.external_function_table,
-        };
+        );
 
         Ok(process_context)
     }

@@ -1,0 +1,32 @@
+// Copyright (c) 2025 Hemashushu <hippospark@gmail.com>, All rights reserved.
+//
+// This Source Code Form is subject to the terms of
+// the Mozilla Public License version 2.0 and additional exceptions,
+// more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
+
+import fn module::put_string(i64,i32) -> i32
+
+readonly data message:byte[] = "Hello world!\n\0"
+
+pub fn _start () -> i32 {
+    call(put_string
+        host_addr_data(message)
+
+        // count the length of string
+        block (count:i64 = imm_i64(0)) -> i32 {
+            when
+                eq_i32(
+                    data_load_extend_i8_u(
+                        message
+                        local_load_i64(count)
+                        )
+                    imm_i32(0))
+                break(local_load_i64(count))
+
+            recur(
+                add_imm_i64(1, local_load_i64(count))
+            )
+        }
+
+    )
+}

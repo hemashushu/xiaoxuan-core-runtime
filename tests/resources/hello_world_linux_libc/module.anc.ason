@@ -1,0 +1,8 @@
+{
+    name: "hello_world"
+    version: "1.0.0"
+    edition: "2025"
+    libraries: [
+        "libc": library::system("libc.so.6")
+    ]
+}

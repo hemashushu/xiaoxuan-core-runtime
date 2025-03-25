@@ -1,0 +1,34 @@
+// Copyright (c) 2025 Hemashushu <hippospark@gmail.com>, All rights reserved.
+//
+// This Source Code Form is subject to the terms of
+// the Mozilla Public License version 2.0 and additional exceptions,
+// more details in file LICENSE, LICENSE.additional and CONTRIBUTING.
+
+// syscall name: write
+// syscall number: 0x1
+// args: (unsigned int fd, const char *buf, size_t count)
+//
+// refer:
+// https://www.chromium.org/chromium-os/developer-library/reference/linux-constants/syscalls/#x86_64-64-bit
+
+// Returns the error_no of the syscall, `0` indicates success.
+pub fn put_string(message_ptr: i64, count: i32) -> i32
+    [return_value:i64, error_no:i32]{
+
+    local_store_i64(
+        return_value
+        local_store_i32(error_no
+
+            // `syscall` returns `(return_value:i64, error_no:i32)`
+            // note that `error_no` is the top most on the stack
+            syscall(
+                1           // syscall number of `write`
+                imm_i32(1)  // stdout
+                local_load_i64(message_ptr)
+                local_load_i32_u(count)
+            )
+        )
+    )
+
+    local_load_i32_s(error_no)
+}
